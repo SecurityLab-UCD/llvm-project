@@ -67,6 +67,11 @@ void llvm::describeFuzzerFloatOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
   Ops.push_back(cmpOpDescriptor(1, Instruction::FCmp, CmpInst::FCMP_TRUE));
 }
 
+void llvm::describeFuzzerUnaryOperations(
+    std::vector<fuzzerop::OpDescriptor> &Ops) {
+  Ops.push_back(fnegDescriptor(1));
+}
+
 void llvm::describeFuzzerControlFlowOps(
     std::vector<fuzzerop::OpDescriptor> &Ops) {
   Ops.push_back(splitBlockDescriptor(1));
@@ -88,6 +93,27 @@ void llvm::describeFuzzerVectorOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
   Ops.push_back(shuffleVectorDescriptor(1));
 }
 
+void llvm::describeFuzzerOtherOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
+  Ops.push_back(selectDescriptor(1));
+  /// TODO: Should've put cmp here.
+}
+
+OpDescriptor llvm::fuzzerop::selectDescriptor(unsigned Weight) {
+  auto buildOp = [](ArrayRef<Value *> Srcs, Instruction *Inst) {
+    return SelectInst::Create(Srcs[0], Srcs[1], Srcs[2], "S", Inst);
+  };
+  return {Weight,
+          {boolOrVecBoolType(), matchFirstLengthWAnyType(), matchSecondType()},
+          buildOp};
+}
+
+OpDescriptor llvm::fuzzerop::fnegDescriptor(unsigned Weight) {
+  auto buildOp = [](ArrayRef<Value *> Srcs, Instruction *Inst) {
+    return UnaryOperator::Create(Instruction::FNeg, Srcs[0], "F", Inst);
+  };
+  return {Weight, {anyFloatOrVecFloatType()}, buildOp};
+}
+
 OpDescriptor llvm::fuzzerop::binOpDescriptor(unsigned Weight,
                                              Instruction::BinaryOps Op) {
   auto buildOp = [Op](ArrayRef<Value *> Srcs, Instruction *Inst) {
@@ -107,13 +133,13 @@ OpDescriptor llvm::fuzzerop::binOpDescriptor(unsigned Weight,
   case Instruction::And:
   case Instruction::Or:
   case Instruction::Xor:
-    return {Weight, {anyIntType(), matchFirstType()}, buildOp};
+    return {Weight, {anyIntOrVecIntType(), matchFirstType()}, buildOp};
   case Instruction::FAdd:
   case Instruction::FSub:
   case Instruction::FMul:
   case Instruction::FDiv:
   case Instruction::FRem:
-    return {Weight, {anyFloatType(), matchFirstType()}, buildOp};
+    return {Weight, {anyFloatOrVecFloatType(), matchFirstType()}, buildOp};
   case Instruction::BinaryOpsEnd:
     llvm_unreachable("Value out of range of enum");
   }
@@ -298,7 +324,7 @@ OpDescriptor llvm::fuzzerop::insertElementDescriptor(unsigned Weight) {
   auto buildInsert = [](ArrayRef<Value *> Srcs, Instruction *Inst) {
     return InsertElementInst::Create(Srcs[0], Srcs[1], Srcs[2], "I", Inst);
   };
-    // TODO: Try to avoid undefined accesses.
+  // TODO: Try to avoid undefined accesses.
   return {Weight,
           {anyVectorType(), matchScalarOfFirstType(), anyIntType()},
           buildInsert};

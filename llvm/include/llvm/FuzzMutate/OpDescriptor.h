@@ -117,9 +117,48 @@ static inline SourcePred anyIntType() {
   return {Pred, Make};
 }
 
+static inline SourcePred anyIntOrVecIntType() {
+  auto Pred = [](ArrayRef<Value *>, const Value *V) {
+    Type *Ty = V->getType();
+    if (VectorType *VecTy = dyn_cast<VectorType>(Ty)) {
+      Ty = VecTy->getElementType();
+    }
+    return Ty->isIntegerTy();
+  };
+  auto Make = None;
+  return {Pred, Make};
+}
+
+static inline SourcePred boolOrVecBoolType() {
+  auto Pred = [](ArrayRef<Value *>, const Value *V) {
+    Type *Ty = V->getType();
+    if (VectorType *VecTy = dyn_cast<VectorType>(Ty)) {
+      Ty = VecTy->getElementType();
+    }
+    if (IntegerType *IntTy = dyn_cast<IntegerType>(Ty)) {
+      return IntTy->getBitWidth() == 1;
+    } else {
+      return false;
+    }
+  };
+  auto Make = None;
+  return {Pred, Make};
+}
+
 static inline SourcePred anyFloatType() {
   auto Pred = [](ArrayRef<Value *>, const Value *V) {
     return V->getType()->isFloatingPointTy();
+  };
+  auto Make = None;
+  return {Pred, Make};
+}
+static inline SourcePred anyFloatOrVecFloatType() {
+  auto Pred = [](ArrayRef<Value *>, const Value *V) {
+    Type *Ty = V->getType();
+    if (VectorType *VecTy = dyn_cast<VectorType>(Ty)) {
+      Ty = VecTy->getElementType();
+    }
+    return Ty->isFloatingPointTy();
   };
   auto Make = None;
   return {Pred, Make};
@@ -203,6 +242,58 @@ static inline SourcePred matchFirstType() {
   return {Pred, Make};
 }
 
+static inline SourcePred matchFirstLengthWAnyType() {
+  auto Pred = [](ArrayRef<Value *> Cur, const Value *V) {
+    assert(!Cur.empty() && "No first source yet");
+    Type *This = V->getType(), *First = Cur[0]->getType();
+    VectorType *ThisVec = dyn_cast<VectorType>(This),
+               *FirstVec = dyn_cast<VectorType>(First);
+    if (ThisVec != nullptr && FirstVec != nullptr) {
+      return ThisVec->getElementCount() == FirstVec->getElementCount();
+    } else {
+      return (ThisVec == nullptr) && (FirstVec == nullptr) &&
+             (!This->isVoidTy());
+    }
+  };
+  auto Make = [](ArrayRef<Value *> Cur, ArrayRef<Type *> BaseTypes) {
+    assert(!Cur.empty() && "No first source yet");
+    std::vector<Constant *> Result;
+    ElementCount EC;
+    bool isVec = false;
+    if (VectorType *VecTy = dyn_cast<VectorType>(Cur[0]->getType())) {
+      EC = VecTy->getElementCount();
+      isVec = true;
+    }
+    for (Type *T : BaseTypes) {
+      // We don't do nested vectors yet.
+      if (!T->isVectorTy() && !T->isVoidTy()) {
+        if (isVec) {
+          // If the first pred is <i1 x N>, make the result <T x N>
+          makeConstantsWithType(VectorType::get(T, EC), Result);
+        } else {
+          makeConstantsWithType(T, Result);
+        }
+      }
+    }
+    assert(!Result.empty() && "No potential constants.");
+    return Result;
+  };
+  return {Pred, Make};
+}
+
+/// Match values that have the same type as the first source.
+static inline SourcePred matchSecondType() {
+  auto Pred = [](ArrayRef<Value *> Cur, const Value *V) {
+    assert((Cur.size() > 1) && "No second source yet");
+    return V->getType() == Cur[1]->getType();
+  };
+  auto Make = [](ArrayRef<Value *> Cur, ArrayRef<Type *>) {
+    assert((Cur.size() > 1) && "No second source yet");
+    return makeConstantsWithType(Cur[1]->getType());
+  };
+  return {Pred, Make};
+}
+
 /// Match values that have the first source's scalar type.
 static inline SourcePred matchScalarOfFirstType() {
   auto Pred = [](ArrayRef<Value *> Cur, const Value *V) {
@@ -216,7 +307,7 @@ static inline SourcePred matchScalarOfFirstType() {
   return {Pred, Make};
 }
 
-} // end fuzzerop namespace
-} // end llvm namespace
+} // namespace fuzzerop
+} // namespace llvm
 
 #endif // LLVM_FUZZMUTATE_OPDESCRIPTOR_H
