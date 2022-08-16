@@ -26,6 +26,14 @@ void fuzzerop::makeConstantsWithType(Type *T, std::vector<Constant *> &Cs) {
     Cs.push_back(ConstantFP::get(Ctx, APFloat::getZero(Sem)));
     Cs.push_back(ConstantFP::get(Ctx, APFloat::getLargest(Sem)));
     Cs.push_back(ConstantFP::get(Ctx, APFloat::getSmallest(Sem)));
+  } else if (VectorType *VecTy = dyn_cast<VectorType>(T)) {
+    std::vector<Constant *> EleCs;
+    Type *EltTy = VecTy->getElementType();
+    makeConstantsWithType(EltTy, EleCs);
+    ElementCount EC = VecTy->getElementCount();
+    for (Constant *Elt : EleCs) {
+      Cs.push_back(ConstantVector::getSplat(EC, Elt));
+    }
   } else
     Cs.push_back(UndefValue::get(T));
 }
