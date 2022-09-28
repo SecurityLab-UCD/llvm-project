@@ -26,14 +26,17 @@
 
 using namespace llvm;
 
-static void createEmptyFunction(Module &M) {
+static void defineFunction(Module &M, Function *F) {
   // TODO: Some arguments and a return value would probably be more interesting.
   LLVMContext &Context = M.getContext();
-  Function *F = Function::Create(FunctionType::get(Type::getVoidTy(Context), {},
-                                                   /*isVarArg=*/false),
-                                 GlobalValue::ExternalLinkage, "f", &M);
   BasicBlock *BB = BasicBlock::Create(Context, "BB", F);
-  ReturnInst::Create(Context, BB);
+  if (Type *RetTy = F->getReturnType(); RetTy != Type::getVoidTy(Context)) {
+    Instruction *RetAlloca = new AllocaInst(RetTy, 0, "RP", BB);
+    Instruction *RetLoad = new LoadInst(RetTy, RetAlloca, "", BB);
+    ReturnInst::Create(Context, RetLoad, BB);
+  } else {
+    ReturnInst::Create(Context, BB);
+  }
 }
 
 void IRMutationStrategy::mutate(Module &M, RandomIRBuilder &IB) {
@@ -42,10 +45,13 @@ void IRMutationStrategy::mutate(Module &M, RandomIRBuilder &IB) {
     if (!F.isDeclaration())
       RS.sample(&F, /*Weight=*/1);
 
-  if (RS.isEmpty())
-    createEmptyFunction(M);
-  else
-    mutate(*RS.getSelection(), IB);
+  // Should we have more functions?
+  while (RS.totalWeight() < 1) {
+    Function *F = IB.createFunctionDeclaration(M);
+    defineFunction(M, F);
+    RS.sample(F, /*Weight=*/1);
+  }
+  mutate(*RS.getSelection(), IB);
 }
 
 void IRMutationStrategy::mutate(Function &F, RandomIRBuilder &IB) {

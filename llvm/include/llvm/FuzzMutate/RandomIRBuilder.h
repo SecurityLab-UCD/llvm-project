@@ -23,6 +23,8 @@ class Instruction;
 class LLVMContext;
 class Type;
 class Value;
+class Module;
+class Function;
 namespace fuzzerop {
 class SourcePred;
 }
@@ -61,8 +63,9 @@ struct RandomIRBuilder {
                      ArrayRef<Value *> Srcs, fuzzerop::SourcePred Pred);
   Type *chooseType(LLVMContext &Context, ArrayRef<Value *> Srcs,
                    fuzzerop::SourcePred Pred);
+  Function *createFunctionDeclaration(Module &M);
 };
 
-} // end llvm namespace
+} // namespace llvm
 
 #endif // LLVM_FUZZMUTATE_RANDOMIRBUILDER_H
