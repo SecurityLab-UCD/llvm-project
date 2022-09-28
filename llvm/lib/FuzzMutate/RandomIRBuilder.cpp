@@ -12,30 +12,115 @@
 #include "llvm/FuzzMutate/Random.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Module.h"
 
 using namespace llvm;
 using namespace fuzzerop;
+
+enum SourceType {
+  PrevValueInBlock,
+  FunctionArgument,
+  ValueInDominator,
+  GlobalStaticVari,
+  NewSource,
+  EndOfValueSrouce,
+};
+
+std::vector<BasicBlock *> getDominators(BasicBlock *BB) {
+  std::vector<BasicBlock *> ret;
+  DominatorTree DT(*BB->getParent());
+  DomTreeNode *Node = DT[BB]->getIDom();
+  while (Node) {
+    ret.push_back(Node->getBlock());
+    // Get parent block.
+    Node = Node->getIDom();
+  }
+  return ret;
+}
 
 Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
                                            ArrayRef<Instruction *> Insts) {
   return findOrCreateSource(BB, Insts, {}, anyType());
 }
 
+/// @brief Given the Sources that already satisfied Pred, find next source.
+/// @param BB Current basic block.
+/// @param Insts Instructions in this basic block before insertion point
+/// @param Srcs Sources that have been selected
+/// @param Pred The predicate that the sources needs to satisfy
+/// @return The next source Value.
 Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
                                            ArrayRef<Instruction *> Insts,
                                            ArrayRef<Value *> Srcs,
                                            SourcePred Pred) {
-  auto MatchesPred = [&Srcs, &Pred](Instruction *Inst) {
-    return Pred.matches(Srcs, Inst);
-  };
-  auto RS = makeSampler(Rand, make_filter_range(Insts, MatchesPred));
-  // Also consider choosing no source, meaning we want a new one.
-  RS.sample(nullptr, /*Weight=*/1);
-  if (Instruction *Src = RS.getSelection())
-    return Src;
-  return newSource(BB, Insts, Srcs, Pred);
+  auto MatchesPred = [&Srcs, &Pred](Value *V) { return Pred.matches(Srcs, V); };
+  std::vector<uint64_t> SrcTys;
+  for (uint64_t i = 0; i < EndOfValueSrouce; i++) {
+    SrcTys.push_back(i);
+  }
+  // Get a random permutation of different types.
+  for (uint64_t i = EndOfValueSrouce - 1; i > 0; i--) {
+    std::swap(SrcTys[i], SrcTys[Rand() % i]);
+  }
+  for (uint64_t SrcTy : SrcTys) {
+    switch (SrcTy) {
+    case PrevValueInBlock: {
+      auto RS = makeSampler(Rand, make_filter_range(Insts, MatchesPred));
+      if (!RS.isEmpty()) {
+        return RS.getSelection();
+      }
+      break;
+    }
+    case FunctionArgument: {
+      Function *F = BB.getParent();
+      // Somehow I can't use iterators to init these vectors, it will have type
+      // mismatch.
+      std::vector<Argument *> Args;
+      for (uint64_t i = 0; i < F->arg_size(); i++) {
+        Args.push_back(F->getArg(i));
+      }
+      auto RS = makeSampler(Rand, make_filter_range(Args, MatchesPred));
+      if (!RS.isEmpty()) {
+        return RS.getSelection();
+      }
+      break;
+    }
+    case ValueInDominator: {
+      auto dominators = getDominators(&BB);
+      auto BBRS = makeSampler(Rand, dominators);
+      if (BBRS.isEmpty()) {
+        continue;
+      }
+      BasicBlock *Dom = BBRS.getSelection();
+      // Somehow I can't use iterators to init these vectors, it will have type
+      // mismatch.
+      std::vector<Instruction *> Insts;
+      for (Instruction &I : *Dom) {
+        Insts.push_back(&I);
+      }
+      auto RS = makeSampler(Rand, make_filter_range(Insts, MatchesPred));
+      // Also consider choosing no source, meaning we want a new one.
+      if (!RS.isEmpty()) {
+        return RS.getSelection();
+      }
+      break;
+    }
+    case GlobalStaticVari: {
+      continue;
+    }
+    case NewSource: {
+      return newSource(BB, Insts, Srcs, Pred);
+    }
+    case EndOfValueSrouce: {
+      llvm_unreachable("Shouldn't be here");
+    }
+    }
+  }
+  llvm_unreachable("Shouldn't be here");
 }
 
 Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
@@ -78,8 +163,8 @@ static bool isCompatibleReplacement(const Instruction *I, const Use &Operand,
   case Instruction::GetElementPtr:
   case Instruction::ExtractElement:
   case Instruction::ExtractValue:
-    // TODO: We could potentially validate these, but for now just leave indices
-    // alone.
+    // TODO: We could potentially validate these, but for now just leave
+    // indices alone.
     if (Operand.getOperandNo() >= 1)
       return false;
     break;
@@ -100,9 +185,9 @@ void RandomIRBuilder::connectToSink(BasicBlock &BB,
   auto RS = makeSampler<Use *>(Rand);
   for (auto &I : Insts) {
     if (isa<IntrinsicInst>(I))
-      // TODO: Replacing operands of intrinsics would be interesting, but
-      // there's no easy way to verify that a given replacement is valid given
-      // that intrinsics can impose arbitrary constraints.
+      // TODO: Replacing operands of intrinsics would be interesting,
+      // but there's no easy way to verify that a given replacement is
+      // valid given that intrinsics can impose arbitrary constraints.
       continue;
     for (Use &U : I->operands())
       if (isCompatibleReplacement(I, U, V))
@@ -137,8 +222,8 @@ Value *RandomIRBuilder::findPointer(BasicBlock &BB,
                                     ArrayRef<Instruction *> Insts,
                                     ArrayRef<Value *> Srcs, SourcePred Pred) {
   auto IsMatchingPtr = [&Srcs, &Pred](Instruction *Inst) {
-    // Invoke instructions sometimes produce valid pointers but currently
-    // we can't insert loads or stores from them
+    // Invoke instructions sometimes produce valid pointers but
+    // currently we can't insert loads or stores from them
     if (Inst->isTerminator())
       return false;
 
@@ -159,4 +244,23 @@ Value *RandomIRBuilder::findPointer(BasicBlock &BB,
   if (auto RS = makeSampler(Rand, make_filter_range(Insts, IsMatchingPtr)))
     return RS.getSelection();
   return nullptr;
+}
+
+Function *RandomIRBuilder::createFunctionDeclaration(Module &M) {
+  auto RS = makeSampler<Type *>(Rand);
+  RS.sample(KnownTypes);
+
+  Type *RetType = RS.getSelection();
+  // TODO: Random num args.
+  std::vector<Type *> Args;
+  for (int i = 0; i < 5; i++) {
+    auto RS = makeSampler<Type *>(Rand);
+    RS.sample(KnownTypes);
+    Args.push_back(RS.getSelection());
+  }
+
+  Function *F = Function::Create(FunctionType::get(RetType, Args,
+                                                   /*isVarArg=*/false),
+                                 GlobalValue::ExternalLinkage, "f", &M);
+  return F;
 }
