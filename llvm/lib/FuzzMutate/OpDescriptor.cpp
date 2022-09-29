@@ -27,8 +27,8 @@ void fuzzerop::makeConstantsWithType(Type *T, std::vector<Constant *> &Cs) {
     auto &Ctx = T->getContext();
     auto &Sem = T->getFltSemantics();
     Cs.push_back(ConstantFP::get(Ctx, APFloat::getZero(Sem)));
-    Cs.push_back(ConstantFP::get(Ctx, APFloat(1.0)));
-    Cs.push_back(ConstantFP::get(Ctx, APFloat(3.1415926)));
+    Cs.push_back(ConstantFP::get(Ctx, APFloat(Sem, 1)));
+    Cs.push_back(ConstantFP::get(Ctx, APFloat(Sem, 42)));
     Cs.push_back(ConstantFP::get(Ctx, APFloat::getLargest(Sem)));
     Cs.push_back(ConstantFP::get(Ctx, APFloat::getSmallest(Sem)));
     Cs.push_back(ConstantFP::get(Ctx, APFloat::getInf(Sem)));
