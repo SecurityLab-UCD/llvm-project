@@ -11,6 +11,7 @@
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/FuzzMutate/OpDescriptor.h"
 #include "llvm/FuzzMutate/Operations.h"
 #include "llvm/FuzzMutate/Random.h"
 #include "llvm/FuzzMutate/RandomIRBuilder.h"
@@ -140,7 +141,43 @@ void InjectorIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   if (!OpDesc)
     return;
 
-  for (const auto &Pred : makeArrayRef(OpDesc->SourcePreds).slice(1))
+  // This is a function call. It doesn't have a builder function (yet).
+  // We'll decide which function to call, what argument type matches, how to
+  // build the call here.
+  if (!OpDesc->BuilderFunc) {
+    Module *M = BB.getParent()->getParent();
+    std::vector<Function *> Functions;
+    for (Function &F : *M) {
+      Functions.push_back(&F);
+    }
+    auto RS = makeSampler(IB.Rand, Functions);
+    Function *F = RS.getSelection();
+    FunctionType *FTy = F->getFunctionType();
+    // We are not using the src we just selected. Or the code would be more
+    // complicated.
+    Srcs.pop_back();
+    // For void ty, we don't have Preds, nor do we have source.
+    SmallVector<fuzzerop::SourcePred, 2> SourcePreds;
+    if (F->arg_size() != 0) {
+      for (Type *ArgTy : FTy->params()) {
+        auto Pred = [ArgTy](ArrayRef<Value *>, const Value *CurVal) {
+          return ArgTy == CurVal->getType();
+        };
+        SourcePreds.push_back(fuzzerop::SourcePred(Pred, None));
+      }
+    }
+    OpDesc->SourcePreds = SourcePreds;
+    bool isRetVoid = (F->getReturnType() == Type::getVoidTy(M->getContext()));
+    OpDesc->BuilderFunc = [FTy, F, isRetVoid](ArrayRef<Value *> Srcs,
+                                              Instruction *Inst) {
+      StringRef Name = isRetVoid ? nullptr : "C";
+      CallInst *Call = CallInst::Create(FTy, F, Srcs, Name, Inst);
+      // Don't return this call inst if it return void as it can't be sinked.
+      return isRetVoid ? nullptr : Call;
+    };
+  }
+
+  for (const auto &Pred : makeArrayRef(OpDesc->SourcePreds).slice(Srcs.size()))
     Srcs.push_back(IB.findOrCreateSource(BB, InstsBefore, Srcs, Pred));
 
   if (Value *Op = OpDesc->BuilderFunc(Srcs, Insts[IP])) {
