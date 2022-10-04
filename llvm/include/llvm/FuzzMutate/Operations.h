@@ -48,6 +48,7 @@ OpDescriptor insertValueDescriptor(unsigned Weight);
 OpDescriptor extractElementDescriptor(unsigned Weight);
 OpDescriptor insertElementDescriptor(unsigned Weight);
 OpDescriptor shuffleVectorDescriptor(unsigned Weight);
+OpDescriptor callDescriptor(unsigned Weight);
 /// @}
 
 } // namespace fuzzerop
