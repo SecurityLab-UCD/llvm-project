@@ -246,21 +246,51 @@ Value *RandomIRBuilder::findPointer(BasicBlock &BB,
   return nullptr;
 }
 
-Function *RandomIRBuilder::createFunctionDeclaration(Module &M) {
-  auto RS = makeSampler<Type *>(Rand);
-  RS.sample(KnownTypes);
+Function *RandomIRBuilder::createFunctionDeclaration(Module &M,
+                                                     uint64_t ArgNum) {
+  uint64_t TyIdx = uniform<uint64_t>(Rand, 0, KnownTypes.size() - 1);
+  Type *RetType = KnownTypes[TyIdx];
 
-  Type *RetType = RS.getSelection();
-  // TODO: Random num args.
-  std::vector<Type *> Args;
-  for (int i = 0; i < 5; i++) {
-    auto RS = makeSampler<Type *>(Rand);
-    RS.sample(KnownTypes);
-    Args.push_back(RS.getSelection());
+  SmallVector<Type *, 2> Args;
+  for (uint64_t i = 0; i < ArgNum; i++) {
+    TyIdx = uniform<uint64_t>(Rand, 0, KnownTypes.size() - 1);
+    Args.push_back(KnownTypes[TyIdx]);
   }
 
   Function *F = Function::Create(FunctionType::get(RetType, Args,
                                                    /*isVarArg=*/false),
                                  GlobalValue::ExternalLinkage, "f", &M);
   return F;
+}
+Function *RandomIRBuilder::createFunctionDeclaration(Module &M,
+                                                     uint64_t MinArgNum,
+                                                     uint64_t MaxArgNum) {
+  return createFunctionDeclaration(
+      M, uniform<uint64_t>(Rand, MinArgNum, MaxArgNum));
+}
+
+Function *RandomIRBuilder::createFunctionDefinition(Module &M,
+                                                    uint64_t ArgNum) {
+  Function *F = this->createFunctionDeclaration(M, ArgNum);
+
+  // TODO: Some arguments and a return value would probably be more
+  // interesting.
+  LLVMContext &Context = M.getContext();
+  BasicBlock *BB = BasicBlock::Create(Context, "BB", F);
+  Type *RetTy = F->getReturnType();
+  if (RetTy != Type::getVoidTy(Context)) {
+    Instruction *RetAlloca = new AllocaInst(RetTy, 0, "RP", BB);
+    Instruction *RetLoad = new LoadInst(RetTy, RetAlloca, "", BB);
+    ReturnInst::Create(Context, RetLoad, BB);
+  } else {
+    ReturnInst::Create(Context, BB);
+  }
+
+  return F;
+}
+Function *RandomIRBuilder::createFunctionDefinition(Module &M,
+                                                    uint64_t MinArgNum,
+                                                    uint64_t MaxArgNum) {
+  return createFunctionDefinition(
+      M, uniform<uint64_t>(Rand, MinArgNum, MaxArgNum));
 }
