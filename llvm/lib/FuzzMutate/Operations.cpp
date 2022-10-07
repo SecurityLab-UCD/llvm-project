@@ -95,7 +95,7 @@ void llvm::describeFuzzerVectorOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
 
 void llvm::describeFuzzerOtherOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
   Ops.push_back(selectDescriptor(1));
-  Ops.push_back(callDescriptor(2));
+  // call inst has its own Strategy
   /// FIXME: Should've put cmp here.
 }
 
@@ -353,13 +353,4 @@ OpDescriptor llvm::fuzzerop::shuffleVectorDescriptor(unsigned Weight) {
   return {Weight,
           {anyVectorType(), matchFirstType(), validShuffleVectorIndex()},
           buildShuffle};
-}
-
-/// @brief  Callop is special. We can't determine what functions to call at
-/// (compiler) static time. So we leave the type and constructor empty and
-/// (compiler) runtime, or compile-time will figure that out.
-/// @param Weight ALL functions combined weight. So you might want to set that
-/// higher than normal op.
-OpDescriptor llvm::fuzzerop::callDescriptor(unsigned Weight) {
-  return {Weight, {anyType()}, nullptr};
 }

@@ -116,6 +116,17 @@ public:
   void mutate(Instruction &Inst, RandomIRBuilder &IB) override;
 };
 
+class FunctionIRStrategy : public IRMutationStrategy {
+public:
+  uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
+                     uint64_t CurrentWeight) override {
+    return 10;
+  }
+
+  using IRMutationStrategy::mutate;
+  void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
+};
+
 /// Fuzzer friendly interface for the llvm bitcode parser.
 ///
 /// \param Data Bitcode we are going to parse

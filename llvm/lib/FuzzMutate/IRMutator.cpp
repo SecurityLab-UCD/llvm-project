@@ -27,19 +27,6 @@
 
 using namespace llvm;
 
-static void defineFunction(Module &M, Function *F) {
-  // TODO: Some arguments and a return value would probably be more interesting.
-  LLVMContext &Context = M.getContext();
-  BasicBlock *BB = BasicBlock::Create(Context, "BB", F);
-  if (Type *RetTy = F->getReturnType(); RetTy != Type::getVoidTy(Context)) {
-    Instruction *RetAlloca = new AllocaInst(RetTy, 0, "RP", BB);
-    Instruction *RetLoad = new LoadInst(RetTy, RetAlloca, "", BB);
-    ReturnInst::Create(Context, RetLoad, BB);
-  } else {
-    ReturnInst::Create(Context, BB);
-  }
-}
-
 void IRMutationStrategy::mutate(Module &M, RandomIRBuilder &IB) {
   auto RS = makeSampler<Function *>(IB.Rand);
   for (Function &F : M)
@@ -48,8 +35,7 @@ void IRMutationStrategy::mutate(Module &M, RandomIRBuilder &IB) {
 
   // Should we have more functions?
   while (RS.totalWeight() < 1) {
-    Function *F = IB.createFunctionDeclaration(M);
-    defineFunction(M, F);
+    Function *F = IB.createFunctionDefinition(M, 0, 5);
     RS.sample(F, /*Weight=*/1);
   }
   mutate(*RS.getSelection(), IB);
@@ -141,42 +127,6 @@ void InjectorIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   if (!OpDesc)
     return;
 
-  // This is a function call. It doesn't have a builder function (yet).
-  // We'll decide which function to call, what argument type matches, how to
-  // build the call here.
-  if (!OpDesc->BuilderFunc) {
-    Module *M = BB.getParent()->getParent();
-    std::vector<Function *> Functions;
-    for (Function &F : *M) {
-      Functions.push_back(&F);
-    }
-    auto RS = makeSampler(IB.Rand, Functions);
-    Function *F = RS.getSelection();
-    FunctionType *FTy = F->getFunctionType();
-    // We are not using the src we just selected. Or the code would be more
-    // complicated.
-    Srcs.pop_back();
-    // For void ty, we don't have Preds, nor do we have source.
-    SmallVector<fuzzerop::SourcePred, 2> SourcePreds;
-    if (F->arg_size() != 0) {
-      for (Type *ArgTy : FTy->params()) {
-        auto Pred = [ArgTy](ArrayRef<Value *>, const Value *CurVal) {
-          return ArgTy == CurVal->getType();
-        };
-        SourcePreds.push_back(fuzzerop::SourcePred(Pred, None));
-      }
-    }
-    OpDesc->SourcePreds = SourcePreds;
-    bool isRetVoid = (F->getReturnType() == Type::getVoidTy(M->getContext()));
-    OpDesc->BuilderFunc = [FTy, F, isRetVoid](ArrayRef<Value *> Srcs,
-                                              Instruction *Inst) {
-      StringRef Name = isRetVoid ? nullptr : "C";
-      CallInst *Call = CallInst::Create(FTy, F, Srcs, Name, Inst);
-      // Don't return this call inst if it return void as it can't be sinked.
-      return isRetVoid ? nullptr : Call;
-    };
-  }
-
   for (const auto &Pred : makeArrayRef(OpDesc->SourcePreds).slice(Srcs.size()))
     Srcs.push_back(IB.findOrCreateSource(BB, InstsBefore, Srcs, Pred));
 
@@ -263,8 +213,8 @@ void InstModificationIRStrategy::mutate(Instruction &Inst,
   case Instruction::Mul:
   case Instruction::Sub:
   case Instruction::Shl:
-    Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(true); }),
-        Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(false); });
+    Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(true); });
+    Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(false); });
     Modifications.push_back([&Inst]() { Inst.setHasNoUnsignedWrap(true); });
     Modifications.push_back([&Inst]() { Inst.setHasNoUnsignedWrap(false); });
 
@@ -292,6 +242,64 @@ void InstModificationIRStrategy::mutate(Instruction &Inst,
   auto RS = makeSampler(IB.Rand, Modifications);
   if (RS)
     RS.getSelection()();
+}
+
+void FunctionIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  Module *M = BB.getParent()->getParent();
+  // If nullptr is selected, we will create a new function declaration.
+  SmallVector<Function *, 32> Functions({nullptr});
+  for (Function &F : M->functions()) {
+    Functions.push_back(&F);
+  }
+
+  auto RS = makeSampler(IB.Rand, Functions);
+  Function *F = RS.getSelection();
+  if (!F) {
+    F = IB.createFunctionDeclaration(*M, 0, 5);
+  }
+
+  FunctionType *FTy = F->getFunctionType();
+  SmallVector<fuzzerop::SourcePred, 2> SourcePreds;
+  if (F->arg_size() != 0) {
+    for (Type *ArgTy : FTy->params()) {
+      auto Pred = [ArgTy](ArrayRef<Value *>, const Value *CurVal) {
+        return ArgTy == CurVal->getType();
+      };
+      SourcePreds.push_back(fuzzerop::SourcePred(Pred, None));
+    }
+  }
+  bool isRetVoid = (F->getReturnType() == Type::getVoidTy(M->getContext()));
+  auto BuilderFunc = [FTy, F, isRetVoid](ArrayRef<Value *> Srcs,
+                                         Instruction *Inst) {
+    StringRef Name = isRetVoid ? nullptr : "C";
+    CallInst *Call = CallInst::Create(FTy, F, Srcs, Name, Inst);
+    // Don't return this call inst if it return void as it can't be sinked.
+    return isRetVoid ? nullptr : Call;
+  };
+
+  SmallVector<Instruction *, 32> Insts;
+  for (auto I = BB.getFirstInsertionPt(), E = BB.end(); I != E; ++I)
+    Insts.push_back(&*I);
+  if (Insts.size() < 1)
+    return;
+
+  // Choose an insertion point for our new call instruction.
+  size_t IP = uniform<size_t>(IB.Rand, 0, Insts.size() - 1);
+
+  auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
+  auto InstsAfter = makeArrayRef(Insts).slice(IP);
+
+  // Choose a source, which will be used to constrain the operation selection.
+  SmallVector<Value *, 2> Srcs;
+
+  for (const auto &Pred : makeArrayRef(SourcePreds)) {
+    Srcs.push_back(IB.findOrCreateSource(BB, InstsBefore, Srcs, Pred));
+  }
+
+  if (Value *Op = BuilderFunc(Srcs, Insts[IP])) {
+    // Find a sink and wire up the results of the operation.
+    IB.connectToSink(BB, InstsAfter, Op);
+  }
 }
 
 std::unique_ptr<Module> llvm::parseModule(const uint8_t *Data, size_t Size,

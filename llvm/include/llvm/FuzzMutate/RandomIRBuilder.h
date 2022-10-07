@@ -63,7 +63,12 @@ struct RandomIRBuilder {
                      ArrayRef<Value *> Srcs, fuzzerop::SourcePred Pred);
   Type *chooseType(LLVMContext &Context, ArrayRef<Value *> Srcs,
                    fuzzerop::SourcePred Pred);
-  Function *createFunctionDeclaration(Module &M);
+  Function *createFunctionDeclaration(Module &M, uint64_t ArgNum);
+  Function *createFunctionDeclaration(Module &M, uint64_t MinArgNum,
+                                      uint64_t MaxArgNum);
+  Function *createFunctionDefinition(Module &M, uint64_t ArgNum);
+  Function *createFunctionDefinition(Module &M, uint64_t MinArgNum,
+                                     uint64_t MaxArgNum);
 };
 
 } // namespace llvm
