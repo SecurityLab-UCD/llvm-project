@@ -127,6 +127,42 @@ public:
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 };
 
+class CFGIRStrategy : public IRMutationStrategy {
+public:
+  uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
+                     uint64_t CurrentWeight) override {
+    return 4;
+  }
+
+  using IRMutationStrategy::mutate;
+  void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
+  void connectBlocksToSink(ArrayRef<BasicBlock *> Blocks, BasicBlock *Sink,
+                           RandomIRBuilder &IB);
+};
+
+class InsertPHItrategy : public IRMutationStrategy {
+public:
+  uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
+                     uint64_t CurrentWeight) override {
+    return 1;
+  }
+
+  using IRMutationStrategy::mutate;
+  void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
+};
+
+class OperandMutatorstrategy : public IRMutationStrategy {
+public:
+  uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
+                     uint64_t CurrentWeight) override {
+    return 1;
+  }
+
+  using IRMutationStrategy::mutate;
+  void mutate(Function &F, RandomIRBuilder &IB) override;
+  void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
+};
+
 /// Fuzzer friendly interface for the llvm bitcode parser.
 ///
 /// \param Data Bitcode we are going to parse
@@ -150,6 +186,6 @@ size_t writeModule(const Module &M, uint8_t *Dest, size_t MaxSize);
 std::unique_ptr<Module> parseAndVerify(const uint8_t *Data, size_t Size,
                                        LLVMContext &Context);
 
-} // end llvm namespace
+} // namespace llvm
 
 #endif // LLVM_FUZZMUTATE_IRMUTATOR_H
