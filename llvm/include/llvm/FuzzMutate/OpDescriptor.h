@@ -71,6 +71,20 @@ public:
       return Result;
     };
   }
+  /// The source needs to be an exact match of such type.
+  SourcePred(Type *Ty) {
+    Pred = [Ty](ArrayRef<Value *>, const Value *V) {
+      return V->getType() == Ty;
+    };
+    Make = [Ty](ArrayRef<Value *>, ArrayRef<Type *>) {
+      // Default filter just calls Pred on each of the base types.
+      std::vector<Constant *> Result;
+      makeConstantsWithType(Ty, Result);
+      if (Result.empty())
+        report_fatal_error("Predicate does not match for base types");
+      return Result;
+    };
+  };
 
   /// Returns true if \c New is compatible for the argument after \c Cur
   bool matches(ArrayRef<Value *> Cur, const Value *New) {

@@ -56,7 +56,8 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
 Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
                                            ArrayRef<Instruction *> Insts,
                                            ArrayRef<Value *> Srcs,
-                                           SourcePred Pred) {
+                                           SourcePred Pred,
+                                           bool AllowConstant) {
   auto MatchesPred = [&Srcs, &Pred](Value *V) { return Pred.matches(Srcs, V); };
   std::vector<uint64_t> SrcTys;
   for (uint64_t i = 0; i < EndOfValueSrouce; i++) {
@@ -113,7 +114,7 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
       continue;
     }
     case NewSource: {
-      return newSource(BB, Insts, Srcs, Pred);
+      return newSource(BB, Insts, Srcs, Pred, AllowConstant);
     }
     case EndOfValueSrouce: {
       llvm_unreachable("Shouldn't be here");
@@ -124,10 +125,13 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
 }
 
 Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
-                                  ArrayRef<Value *> Srcs, SourcePred Pred) {
+                                  ArrayRef<Value *> Srcs, SourcePred Pred,
+                                  bool AllowConstant) {
   // Generate some constants to choose from.
   auto RS = makeSampler<Value *>(Rand);
-  RS.sample(Pred.generate(Srcs, KnownTypes));
+  if (AllowConstant) {
+    RS.sample(Pred.generate(Srcs, KnownTypes));
+  }
 
   // If we can find a pointer to load from, use it half the time.
   Value *Ptr = findPointer(BB, Insts, Srcs, Pred);
@@ -149,6 +153,31 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
       RS.sample(NewLoad, RS.totalWeight());
     else
       NewLoad->eraseFromParent();
+  }
+
+  // We don't have anything at this point, create a stack memory.
+  if (RS.isEmpty()) {
+    // Randomly select a type that is allowed here.
+    auto TRS = makeSampler<Value *>(Rand);
+    TRS.sample(Pred.generate(Srcs, KnownTypes));
+    Value *V = TRS.getSelection();
+    Type *Ty = V->getType();
+    // Generate a stack alloca.
+    Function *F = BB.getParent();
+    BasicBlock *EntryBB = &F->getEntryBlock();
+    /// TODO: For all Allocas, maybe allocate an array.
+    AllocaInst *Alloca =
+        new AllocaInst(Ty, 0, "A", &*EntryBB->getFirstInsertionPt());
+    LoadInst *Load = nullptr;
+    ConstantInt *ArrLen =
+        ConstantInt::get(IntegerType::get(F->getParent()->getContext(), 32), 1);
+    if (BB.begin() != BB.end()) {
+      Load =
+          new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", &*BB.getFirstInsertionPt());
+    } else {
+      Load = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", &BB);
+    }
+    RS.sample(Load, 1);
   }
 
   assert(!RS.isEmpty() && "Failed to generate sources");
@@ -246,15 +275,18 @@ Value *RandomIRBuilder::findPointer(BasicBlock &BB,
   return nullptr;
 }
 
+Type *RandomIRBuilder::randomType() {
+  uint64_t TyIdx = uniform<uint64_t>(Rand, 0, KnownTypes.size() - 1);
+  return KnownTypes[TyIdx];
+}
+
 Function *RandomIRBuilder::createFunctionDeclaration(Module &M,
                                                      uint64_t ArgNum) {
-  uint64_t TyIdx = uniform<uint64_t>(Rand, 0, KnownTypes.size() - 1);
-  Type *RetType = KnownTypes[TyIdx];
+  Type *RetType = randomType();
 
   SmallVector<Type *, 2> Args;
   for (uint64_t i = 0; i < ArgNum; i++) {
-    TyIdx = uniform<uint64_t>(Rand, 0, KnownTypes.size() - 1);
-    Args.push_back(KnownTypes[TyIdx]);
+    Args.push_back(randomType());
   }
 
   Function *F = Function::Create(FunctionType::get(RetType, Args,

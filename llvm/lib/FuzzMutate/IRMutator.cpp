@@ -8,6 +8,7 @@
 
 #include "llvm/FuzzMutate/IRMutator.h"
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -24,6 +25,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Transforms/Scalar/DCE.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 
 using namespace llvm;
 
@@ -49,8 +51,8 @@ void IRMutationStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   mutate(*makeSampler(IB.Rand, make_pointer_range(BB)).getSelection(), IB);
 }
 
-void IRMutator::mutateModule(Module &M, int Seed, size_t CurSize,
-                             size_t MaxSize) {
+void IRMutator::mutateModule(Module &M, int Seed, uint64_t CurSize,
+                             uint64_t MaxSize) {
   std::vector<Type *> Types;
   for (const auto &Getter : AllowedTypes)
     Types.push_back(Getter(M.getContext()));
@@ -111,7 +113,7 @@ void InjectorIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     return;
 
   // Choose an insertion point for our new instruction.
-  size_t IP = uniform<size_t>(IB.Rand, 0, Insts.size() - 1);
+  uint64_t IP = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
 
   auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
   auto InstsAfter = makeArrayRef(Insts).slice(IP);
@@ -136,7 +138,8 @@ void InjectorIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   }
 }
 
-uint64_t InstDeleterIRStrategy::getWeight(size_t CurrentSize, size_t MaxSize,
+uint64_t InstDeleterIRStrategy::getWeight(uint64_t CurrentSize,
+                                          uint64_t MaxSize,
                                           uint64_t CurrentWeight) {
   // If we have less than 200 bytes, panic and try to always delete.
   if (CurrentSize > MaxSize - 200)
@@ -262,10 +265,7 @@ void FunctionIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   SmallVector<fuzzerop::SourcePred, 2> SourcePreds;
   if (F->arg_size() != 0) {
     for (Type *ArgTy : FTy->params()) {
-      auto Pred = [ArgTy](ArrayRef<Value *>, const Value *CurVal) {
-        return ArgTy == CurVal->getType();
-      };
-      SourcePreds.push_back(fuzzerop::SourcePred(Pred, None));
+      SourcePreds.push_back(fuzzerop::SourcePred(ArgTy));
     }
   }
   bool isRetVoid = (F->getReturnType() == Type::getVoidTy(M->getContext()));
@@ -284,7 +284,7 @@ void FunctionIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     return;
 
   // Choose an insertion point for our new call instruction.
-  size_t IP = uniform<size_t>(IB.Rand, 0, Insts.size() - 1);
+  uint64_t IP = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
 
   auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
   auto InstsAfter = makeArrayRef(Insts).slice(IP);
@@ -302,7 +302,196 @@ void FunctionIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   }
 }
 
-std::unique_ptr<Module> llvm::parseModule(const uint8_t *Data, size_t Size,
+void CFGIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  SmallVector<Instruction *, 32> Insts;
+  for (auto I = BB.getFirstInsertionPt(), E = BB.end(); I != E; ++I)
+    Insts.push_back(&*I);
+  if (Insts.size() < 1)
+    return;
+
+  // Choose an insertion point for our new call instruction.
+  uint64_t IP = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
+  auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
+
+  // Next inherits Blocks' terminator.
+  // Here, we have to create a new terminator for Block.
+  BasicBlock *Block = Insts[IP]->getParent();
+  BasicBlock *Next = Block->splitBasicBlock(Insts[IP], "BB");
+
+  Function *F = BB.getParent();
+  LLVMContext &C = F->getParent()->getContext();
+  bool coin = uniform<uint64_t>(IB.Rand, 0, 1);
+  // A coin decides if it is branch or switch
+  if (coin) {
+    BasicBlock *IfTrue = BasicBlock::Create(C, "BR_T", F);
+    BasicBlock *IfFalse = BasicBlock::Create(C, "BR_F", F);
+    Value *Cond =
+        IB.findOrCreateSource(*Block, InstsBefore, {},
+                              fuzzerop::SourcePred(Type::getInt1Ty(C)), false);
+    BranchInst *Branch = BranchInst::Create(IfTrue, IfFalse, Cond);
+    // Remove the old terminator.
+    ReplaceInstWithInst(Block->getTerminator(), Branch);
+    // Use these blocks
+    connectBlocksToSink({IfTrue, IfFalse}, Next, IB);
+  } else {
+    // Determine Integer type.
+    auto isIntegerType = [](Type *Ty) { return Ty->isIntegerTy(); };
+    auto RS =
+        makeSampler(IB.Rand, make_filter_range(IB.KnownTypes, isIntegerType));
+    if (!RS) {
+      llvm_unreachable("Shouldn't be here");
+    }
+    IntegerType *Ty = dyn_cast<IntegerType>(RS.getSelection());
+    if (!Ty) {
+      llvm_unreachable("Shouldn't be here");
+    }
+    uint64_t BitSize = Ty->getBitWidth();
+    uint64_t MaxCaseVal =
+        BitSize >= 64 ? 0xffffffffffffffff : ((uint64_t)1 << BitSize) - 1;
+
+    // Create Switch inst in Block
+    Value *Cond = IB.findOrCreateSource(*Block, InstsBefore, {},
+                                        fuzzerop::SourcePred(Ty), false);
+    BasicBlock *DefaultBlock = BasicBlock::Create(C, "SW_D", F);
+    uint64_t NumCase = uniform<uint64_t>(IB.Rand, 3, 8);
+    // Make sure we don't have more case than this type can handle.
+    if (NumCase > (1 << BitSize)) {
+      NumCase = 1 << BitSize;
+    }
+    SwitchInst *Switch = SwitchInst::Create(Cond, DefaultBlock, NumCase);
+    // Remove the old terminator.
+    ReplaceInstWithInst(Block->getTerminator(), Switch);
+
+    // Create blocks, for each block assign a case value.
+    SmallVector<BasicBlock *, 4> Blocks({DefaultBlock});
+    SmallSet<uint64_t, 4> CaseVals;
+    for (uint64_t i = 0; i < NumCase; i++) {
+      uint64_t CaseVal = [&CaseVals, MaxCaseVal, &IB]() {
+        uint64_t tmp;
+        // Make sure we don't have two cases with same value.
+        do {
+          tmp = uniform<uint64_t>(IB.Rand, 0, MaxCaseVal);
+        } while (CaseVals.count(tmp) != 0);
+        CaseVals.insert(tmp);
+        return tmp;
+      }();
+
+      BasicBlock *CaseBlock = BasicBlock::Create(C, "SW_C", F);
+      ConstantInt *OnValue = ConstantInt::get(Ty, CaseVal);
+      Switch->addCase(OnValue, CaseBlock);
+      Blocks.push_back(CaseBlock);
+    }
+
+    // Use these blocks
+    connectBlocksToSink(Blocks, Next, IB);
+  }
+}
+
+enum CFGToSink {
+  Return,
+  DirectSink,
+  // SinkOrPeer,
+  SinkOrSelfLoop,
+  EndOfCFGToLink
+};
+
+void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
+                                        BasicBlock *Sink, RandomIRBuilder &IB) {
+  uint64_t Idx = uniform<uint64_t>(IB.Rand, 0, Blocks.size() - 1);
+  for (uint64_t I = 0; I < Blocks.size(); I++) {
+    CFGToSink ToSink = static_cast<CFGToSink>(
+        uniform<uint64_t>(IB.Rand, 0, CFGToSink::EndOfCFGToLink - 1));
+    // We have at least one block that directly goes to sink.
+    if (I == Idx) {
+      ToSink = CFGToSink::DirectSink;
+    }
+    BasicBlock *BB = Blocks[I];
+    Function *F = BB->getParent();
+    LLVMContext &C = F->getParent()->getContext();
+    switch (ToSink) {
+    case CFGToSink::Return: {
+      Type *RetTy = F->getReturnType();
+      Value *RetValue = nullptr;
+      if (RetTy != Type::getVoidTy(C)) {
+        RetValue =
+            IB.findOrCreateSource(*BB, {}, {}, fuzzerop::SourcePred(RetTy));
+      }
+      ReturnInst::Create(C, RetValue, BB);
+      break;
+    }
+    case CFGToSink::DirectSink: {
+      BranchInst::Create(Sink, BB);
+      break;
+    }
+    case CFGToSink::SinkOrSelfLoop: {
+      SmallVector<BasicBlock *, 2> Branches({Sink, BB});
+      uint64_t coin = uniform<uint64_t>(IB.Rand, 0, 1);
+      Value *Cond = IB.findOrCreateSource(
+          *BB, {}, {}, fuzzerop::SourcePred(Type::getInt1Ty(C)), false);
+      BranchInst::Create(Branches[coin], Branches[1 - coin], Cond, BB);
+      break;
+    }
+    case CFGToSink::EndOfCFGToLink:
+      llvm_unreachable("Shouldn't be here");
+    }
+  }
+}
+
+void InsertPHItrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  // Can't insert PHI node to entry node.
+  if (&BB == &BB.getParent()->getEntryBlock()) {
+    return;
+  }
+  Type *Ty = IB.randomType();
+  PHINode *PHI = PHINode::Create(Ty, llvm::pred_size(&BB), "", &BB.front());
+  auto Pred = fuzzerop::SourcePred(Ty);
+
+  SmallVector<Value *, 4> Srcs;
+  for (BasicBlock *Prev : predecessors(&BB)) {
+    SmallVector<Instruction *, 32> Insts;
+    for (auto I = Prev->begin(); I != Prev->end(); ++I)
+      Insts.push_back(&*I);
+    Value *Src = IB.findOrCreateSource(*Prev, Insts, Srcs, Pred);
+    Srcs.push_back(Src);
+    PHI->addIncoming(Src, Prev);
+  }
+  SmallVector<Instruction *, 32> InstsAfter;
+  for (auto I = BB.getFirstInsertionPt(), E = BB.end(); I != E; ++I)
+    InstsAfter.push_back(&*I);
+  IB.connectToSink(BB, InstsAfter, PHI);
+}
+
+void OperandMutatorstrategy::mutate(Function &F, RandomIRBuilder &IB) {
+  for (BasicBlock &BB : F) {
+    this->mutate(BB, IB);
+  }
+}
+void OperandMutatorstrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  SmallVector<Instruction *, 32> Insts;
+  for (auto I = BB.getFirstInsertionPt(), E = BB.end(); I != E; ++I)
+    Insts.push_back(&*I);
+  if (Insts.size() < 1)
+    return;
+
+  // Choose an insertion point for our new instruction.
+  uint64_t IP = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
+
+  auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
+  Instruction *Inst = Insts[IP];
+  uint64_t NumOperands = Inst->getNumOperands();
+  uint64_t Idx = uniform<uint64_t>(IB.Rand, 0, NumOperands - 1);
+  Type *Ty = Inst->getOperand(Idx)->getType();
+  // Changing these types may potentially break the module.
+  if (Ty->isLabelTy() || Ty->isMetadataTy() || Ty->isFunctionTy() ||
+      Ty->isPointerTy()) {
+    return;
+  }
+  Value *NewOperand =
+      IB.findOrCreateSource(BB, InstsBefore, {}, fuzzerop::SourcePred(Ty));
+  Inst->setOperand(Idx, NewOperand);
+}
+
+std::unique_ptr<Module> llvm::parseModule(const uint8_t *Data, uint64_t Size,
                                           LLVMContext &Context) {
 
   if (Size <= 1)
@@ -322,7 +511,7 @@ std::unique_ptr<Module> llvm::parseModule(const uint8_t *Data, size_t Size,
   return std::move(M.get());
 }
 
-size_t llvm::writeModule(const Module &M, uint8_t *Dest, size_t MaxSize) {
+uint64_t llvm::writeModule(const Module &M, uint8_t *Dest, uint64_t MaxSize) {
   std::string Buf;
   {
     raw_string_ostream OS(Buf);
@@ -334,7 +523,7 @@ size_t llvm::writeModule(const Module &M, uint8_t *Dest, size_t MaxSize) {
   return Buf.size();
 }
 
-std::unique_ptr<Module> llvm::parseAndVerify(const uint8_t *Data, size_t Size,
+std::unique_ptr<Module> llvm::parseAndVerify(const uint8_t *Data, uint64_t Size,
                                              LLVMContext &Context) {
   auto M = parseModule(Data, Size, Context);
   if (!M || verifyModule(*M, &errs()))
