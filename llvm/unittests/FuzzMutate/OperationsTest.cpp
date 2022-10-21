@@ -156,8 +156,7 @@ TEST(OperationsTest, SourcePreds) {
   EXPECT_FALSE(AnyVec.matches({}, a));
   EXPECT_FALSE(AnyVec.matches({}, s));
 
-  EXPECT_THAT(AnyVec.generate({}, {v8i8->getType()}),
-              ElementsAre(TypesMatch(v8i8)));
+  EXPECT_THAT(AnyVec.generate({}, {v8i8->getType()}), Each(TypesMatch(v8i8)));
 
   auto First = matchFirstType();
   EXPECT_TRUE(First.matches({i8}, i8));

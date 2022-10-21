@@ -295,4 +295,15 @@ TEST(RandomIRBuilderTest, SwiftError) {
   }
 }
 
+TEST(RandomIRBuilderTest, FunctionGenerator) {
+  LLVMContext Ctx;
+  const char *SourceCode = "";
+  auto M = parseAssembly(SourceCode, Ctx);
+
+  std::vector<Type *> Types = {Type::getInt8Ty(Ctx), Type::getInt32Ty(Ctx)};
+  RandomIRBuilder IB(Seed, Types);
+
+  (void)IB.createFunctionDeclaration(*M);
+  ASSERT_TRUE(!verifyModule(*M, &errs()));
+}
 }
