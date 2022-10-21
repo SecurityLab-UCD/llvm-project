@@ -313,27 +313,31 @@ void CFGIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   uint64_t IP = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
   auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
 
-  // Next inherits Blocks' terminator.
-  // Here, we have to create a new terminator for Block.
+  // `Sink` inherits Blocks' terminator, `Source` will have a BranchInst
+  // directly jumps to `Sink`. Here, we have to create a new terminator for
+  // Block.
   BasicBlock *Block = Insts[IP]->getParent();
-  BasicBlock *Next = Block->splitBasicBlock(Insts[IP], "BB");
+  BasicBlock *Source = Block;
+  BasicBlock *Sink = Block->splitBasicBlock(Insts[IP], "BB");
 
   Function *F = BB.getParent();
   LLVMContext &C = F->getParent()->getContext();
   bool coin = uniform<uint64_t>(IB.Rand, 0, 1);
   // A coin decides if it is branch or switch
   if (coin) {
+    // Branch
     BasicBlock *IfTrue = BasicBlock::Create(C, "BR_T", F);
     BasicBlock *IfFalse = BasicBlock::Create(C, "BR_F", F);
     Value *Cond =
-        IB.findOrCreateSource(*Block, InstsBefore, {},
+        IB.findOrCreateSource(*Source, InstsBefore, {},
                               fuzzerop::SourcePred(Type::getInt1Ty(C)), false);
     BranchInst *Branch = BranchInst::Create(IfTrue, IfFalse, Cond);
     // Remove the old terminator.
-    ReplaceInstWithInst(Block->getTerminator(), Branch);
-    // Use these blocks
-    connectBlocksToSink({IfTrue, IfFalse}, Next, IB);
+    ReplaceInstWithInst(Source->getTerminator(), Branch);
+    // Connect these blocks to `Sink`
+    connectBlocksToSink({IfTrue, IfFalse}, Sink, IB);
   } else {
+    // Switch
     // Determine Integer type.
     auto isIntegerType = [](Type *Ty) { return Ty->isIntegerTy(); };
     auto RS =
@@ -348,19 +352,19 @@ void CFGIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     uint64_t BitSize = Ty->getBitWidth();
     uint64_t MaxCaseVal =
         BitSize >= 64 ? 0xffffffffffffffff : ((uint64_t)1 << BitSize) - 1;
-
     // Create Switch inst in Block
-    Value *Cond = IB.findOrCreateSource(*Block, InstsBefore, {},
+    Value *Cond = IB.findOrCreateSource(*Source, InstsBefore, {},
                                         fuzzerop::SourcePred(Ty), false);
     BasicBlock *DefaultBlock = BasicBlock::Create(C, "SW_D", F);
-    uint64_t NumCase = uniform<uint64_t>(IB.Rand, 3, 8);
+    uint64_t NumCase = uniform<uint64_t>(IB.Rand, 1, 8);
     // Make sure we don't have more case than this type can handle.
-    if (NumCase > (1 << BitSize)) {
-      NumCase = 1 << BitSize;
+    // If `Ty` is Bool, this may happen.
+    if (NumCase > MaxCaseVal) {
+      NumCase = MaxCaseVal;
     }
     SwitchInst *Switch = SwitchInst::Create(Cond, DefaultBlock, NumCase);
     // Remove the old terminator.
-    ReplaceInstWithInst(Block->getTerminator(), Switch);
+    ReplaceInstWithInst(Source->getTerminator(), Switch);
 
     // Create blocks, for each block assign a case value.
     SmallVector<BasicBlock *, 4> Blocks({DefaultBlock});
@@ -382,8 +386,8 @@ void CFGIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
       Blocks.push_back(CaseBlock);
     }
 
-    // Use these blocks
-    connectBlocksToSink(Blocks, Next, IB);
+    // Connect these blocks to `Sink`
+    connectBlocksToSink(Blocks, Sink, IB);
   }
 }
 
@@ -395,6 +399,8 @@ enum CFGToSink {
   EndOfCFGToLink
 };
 
+/// The caller has to guarantee that thest blocks are "empty", i.e. it doesn't
+/// even have terminator.
 void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
                                         BasicBlock *Sink, RandomIRBuilder &IB) {
   uint64_t Idx = uniform<uint64_t>(IB.Rand, 0, Blocks.size() - 1);
@@ -432,7 +438,7 @@ void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
       break;
     }
     case CFGToSink::EndOfCFGToLink:
-      llvm_unreachable("Shouldn't be here");
+      llvm_unreachable("EndOfCFGToLink executed, something's wrong.");
     }
   }
 }

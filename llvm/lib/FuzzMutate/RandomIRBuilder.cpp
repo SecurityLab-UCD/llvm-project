@@ -166,14 +166,13 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
     Function *F = BB.getParent();
     BasicBlock *EntryBB = &F->getEntryBlock();
     /// TODO: For all Allocas, maybe allocate an array.
-    AllocaInst *Alloca =
-        new AllocaInst(Ty, 0, "A", &*EntryBB->getFirstInsertionPt());
+    AllocaInst *Alloca = new AllocaInst(Ty, 0, "A", EntryBB->getTerminator());
     LoadInst *Load = nullptr;
-    ConstantInt *ArrLen =
-        ConstantInt::get(IntegerType::get(F->getParent()->getContext(), 32), 1);
-    if (BB.begin() != BB.end()) {
-      Load =
-          new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", &*BB.getFirstInsertionPt());
+    // nstantInt *ArrLen =
+    //     ConstantInt::get(IntegerType::get(F->getParent()->getContext(), 32),
+    //     1);
+    if (BB.getTerminator()) {
+      Load = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", BB.getTerminator());
     } else {
       Load = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", &BB);
     }
