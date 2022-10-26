@@ -72,6 +72,8 @@ struct RandomIRBuilder {
   Function *createFunctionDefinition(Module &M, uint64_t ArgNum);
   Function *createFunctionDefinition(Module &M, uint64_t MinArgNum,
                                      uint64_t MaxArgNum);
+
+  SmallVector<uint64_t, 4> getRandomPermutation(uint64_t Max);
 };
 
 } // namespace llvm

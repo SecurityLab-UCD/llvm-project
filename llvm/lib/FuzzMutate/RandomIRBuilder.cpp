@@ -21,20 +21,14 @@
 using namespace llvm;
 using namespace fuzzerop;
 
-enum SourceType {
-  PrevValueInBlock,
-  FunctionArgument,
-  ValueInDominator,
-  GlobalStaticVari,
-  NewSource,
-  EndOfValueSrouce,
-};
-
+/// Return a vector of Blocks that dominates this block, excluding current
+/// block.
+template <typename DomTree = DominatorTree>
 std::vector<BasicBlock *> getDominators(BasicBlock *BB) {
   std::vector<BasicBlock *> ret;
-  DominatorTree DT(*BB->getParent());
+  DomTree DT(*BB->getParent());
   DomTreeNode *Node = DT[BB]->getIDom();
-  while (Node) {
+  while (Node && Node->getBlock()) {
     ret.push_back(Node->getBlock());
     // Get parent block.
     Node = Node->getIDom();
@@ -42,6 +36,47 @@ std::vector<BasicBlock *> getDominators(BasicBlock *BB) {
   return ret;
 }
 
+/// Return a vector of Blocks that is dominated by this block, excluding current
+/// block
+template <typename DomTree = DominatorTree>
+std::vector<BasicBlock *> getDominees(BasicBlock *BB) {
+  DomTree DT(*BB->getParent());
+  std::vector<BasicBlock *> ret({BB});
+  uint64_t Idx = 0;
+  while (Idx < ret.size()) {
+    DomTreeNode *Node = DT[ret[Idx]];
+    Idx++;
+    for (DomTreeNode *Child : Node->children()) {
+      ret.push_back(Child->getBlock());
+    }
+  }
+  // We don't add first Node, as it is ourself.
+  ret.erase(ret.begin());
+  return ret;
+}
+
+/// Generatie a random permutation from `[0..Max)`.
+SmallVector<uint64_t, 4> RandomIRBuilder::getRandomPermutation(uint64_t Max) {
+  SmallVector<uint64_t, 4> Ret;
+  for (uint64_t i = 0; i < Max; i++) {
+    Ret.push_back(i);
+  }
+  // Get a random permutation by swapping.
+  // Use int64_t so that when Max == 0, this loop doesn't execute.
+  for (int64_t i = Max - 1; i > 0; i--) {
+    std::swap(Ret[i], Ret[Rand() % i]);
+  }
+  return Ret;
+}
+
+enum SourceType {
+  PrevValueInBlock,
+  FunctionArgument,
+  ValueInDominator,
+  GlobalStaticVari,
+  NewSource,
+  EndOfValueSource,
+};
 Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
                                            ArrayRef<Instruction *> Insts) {
   return findOrCreateSource(BB, Insts, {}, anyType());
@@ -59,14 +94,7 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
                                            SourcePred Pred,
                                            bool AllowConstant) {
   auto MatchesPred = [&Srcs, &Pred](Value *V) { return Pred.matches(Srcs, V); };
-  std::vector<uint64_t> SrcTys;
-  for (uint64_t i = 0; i < EndOfValueSrouce; i++) {
-    SrcTys.push_back(i);
-  }
-  // Get a random permutation of different types.
-  for (uint64_t i = EndOfValueSrouce - 1; i > 0; i--) {
-    std::swap(SrcTys[i], SrcTys[Rand() % i]);
-  }
+  auto SrcTys = getRandomPermutation(EndOfValueSource);
   for (uint64_t SrcTy : SrcTys) {
     switch (SrcTy) {
     case PrevValueInBlock: {
@@ -91,37 +119,38 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
       break;
     }
     case ValueInDominator: {
-      auto dominators = getDominators(&BB);
-      auto BBRS = makeSampler(Rand, dominators);
-      if (BBRS.isEmpty()) {
-        continue;
-      }
-      BasicBlock *Dom = BBRS.getSelection();
-      // Somehow I can't use iterators to init these vectors, it will have type
-      // mismatch.
-      std::vector<Instruction *> Insts;
-      for (Instruction &I : *Dom) {
-        Insts.push_back(&I);
-      }
-      auto RS = makeSampler(Rand, make_filter_range(Insts, MatchesPred));
-      // Also consider choosing no source, meaning we want a new one.
-      if (!RS.isEmpty()) {
-        return RS.getSelection();
+      auto Dominators = getDominators(&BB);
+      auto P = getRandomPermutation(Dominators.size());
+      for (uint64_t i : P) {
+        BasicBlock *Dom = Dominators[i];
+        // Somehow I can't use iterators to init these vectors, it will have
+        // type mismatch.
+        std::vector<Instruction *> Instructions;
+        for (Instruction &I : *Dom) {
+          Instructions.push_back(&I);
+        }
+        auto RS =
+            makeSampler(Rand, make_filter_range(Instructions, MatchesPred));
+        // Also consider choosing no source, meaning we want a new one.
+        if (!RS.isEmpty()) {
+          return RS.getSelection();
+        }
       }
       break;
     }
     case GlobalStaticVari: {
+      /// TODO: Add Global Variable.
       continue;
     }
     case NewSource: {
       return newSource(BB, Insts, Srcs, Pred, AllowConstant);
     }
-    case EndOfValueSrouce: {
-      llvm_unreachable("Shouldn't be here");
+    case EndOfValueSource: {
+      llvm_unreachable("Should've found a new source type.");
     }
     }
   }
-  llvm_unreachable("Shouldn't be here");
+  llvm_unreachable("Should've found a new source.");
 }
 
 Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
@@ -187,19 +216,28 @@ static bool isCompatibleReplacement(const Instruction *I, const Use &Operand,
                                     const Value *Replacement) {
   if (Operand->getType() != Replacement->getType())
     return false;
+  unsigned int OperandNo = Operand.getOperandNo();
   switch (I->getOpcode()) {
   case Instruction::GetElementPtr:
   case Instruction::ExtractElement:
   case Instruction::ExtractValue:
     // TODO: We could potentially validate these, but for now just leave
     // indices alone.
-    if (Operand.getOperandNo() >= 1)
+    if (OperandNo >= 1)
       return false;
     break;
   case Instruction::InsertValue:
   case Instruction::InsertElement:
   case Instruction::ShuffleVector:
-    if (Operand.getOperandNo() >= 2)
+    if (OperandNo >= 2)
+      return false;
+    break;
+  // For Br/Switch, we only try to modify the 1st Operand(Cond).
+  // Modify other operands, like switch case may accidently change case from
+  // ConstnatInt to a register, which is illegal.
+  case Instruction::Switch:
+  case Instruction::Br:
+    if (OperandNo >= 1)
       return false;
     break;
   default:
@@ -208,29 +246,81 @@ static bool isCompatibleReplacement(const Instruction *I, const Use &Operand,
   return true;
 }
 
+enum SinkType {
+  NextValueInBlock,
+  PointersInDom,
+  InstInDominees,
+  NewSink,
+  EndOfValueSink,
+};
 void RandomIRBuilder::connectToSink(BasicBlock &BB,
                                     ArrayRef<Instruction *> Insts, Value *V) {
-  auto RS = makeSampler<Use *>(Rand);
-  for (auto &I : Insts) {
-    if (isa<IntrinsicInst>(I))
-      // TODO: Replacing operands of intrinsics would be interesting,
-      // but there's no easy way to verify that a given replacement is
-      // valid given that intrinsics can impose arbitrary constraints.
-      continue;
-    for (Use &U : I->operands())
-      if (isCompatibleReplacement(I, U, V))
-        RS.sample(&U, 1);
+  auto SinkTys = getRandomPermutation(EndOfValueSink);
+  auto findSinkAndConnect = [this, V](ArrayRef<Instruction *> Instructions) {
+    auto RS = makeSampler<Use *>(Rand);
+    for (auto &I : Instructions) {
+      if (isa<IntrinsicInst>(I))
+        // TODO: Replacing operands of intrinsics would be interesting,
+        // but there's no easy way to verify that a given replacement is
+        // valid given that intrinsics can impose arbitrary constraints.
+        continue;
+      for (Use &U : I->operands())
+        if (isCompatibleReplacement(I, U, V))
+          RS.sample(&U, 1);
+    }
+    if (!RS.isEmpty()) {
+      Use *Sink = RS.getSelection();
+      User *U = Sink->getUser();
+      unsigned OpNo = Sink->getOperandNo();
+      U->setOperand(OpNo, V);
+      return true;
+    }
+    return false;
+  };
+  for (uint64_t SinkTy : SinkTys) {
+    switch (SinkTy) {
+    case NextValueInBlock:
+      if (findSinkAndConnect(Insts))
+        return;
+      break;
+    case PointersInDom: {
+      auto Dominators = getDominators(&BB);
+      for (BasicBlock *Dom : Dominators) {
+        for (Instruction &I : *Dom) {
+          if (PointerType *PtrTy = dyn_cast<PointerType>(I.getType())) {
+            if (PtrTy->isOpaqueOrPointeeTypeMatches(V->getType())) {
+              new StoreInst(V, &I, Insts.back());
+              return;
+            }
+          }
+        }
+      }
+      /// TODO: Also consider pointers in function argument.
+      break;
+    }
+    case InstInDominees: {
+      auto Dominees = getDominees(&BB);
+      auto permutation = getRandomPermutation(Dominees.size());
+      for (uint64_t i : permutation) {
+        BasicBlock *Dominee = Dominees[i];
+        // Somehow I can't use iterators to init these vectors, it will have
+        // type mismatch.
+        std::vector<Instruction *> Instructions;
+        for (Instruction &I : *Dominee)
+          Instructions.push_back(&I);
+        if (findSinkAndConnect(Instructions))
+          return;
+      }
+      break;
+    }
+    case NewSink:
+      newSink(BB, Insts, V);
+      return;
+    case EndOfValueSink:
+    default:
+      llvm_unreachable("Should've found a new sink type.");
+    };
   }
-  // Also consider choosing no sink, meaning we want a new one.
-  RS.sample(nullptr, /*Weight=*/1);
-
-  if (Use *Sink = RS.getSelection()) {
-    User *U = Sink->getUser();
-    unsigned OpNo = Sink->getOperandNo();
-    U->setOperand(OpNo, V);
-    return;
-  }
-  newSink(BB, Insts, V);
 }
 
 void RandomIRBuilder::newSink(BasicBlock &BB, ArrayRef<Instruction *> Insts,

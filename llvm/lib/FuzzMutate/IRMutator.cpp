@@ -322,9 +322,8 @@ void CFGIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 
   Function *F = BB.getParent();
   LLVMContext &C = F->getParent()->getContext();
-  bool coin = uniform<uint64_t>(IB.Rand, 0, 1);
   // A coin decides if it is branch or switch
-  if (coin) {
+  if (uniform<uint64_t>(IB.Rand, 0, 1)) {
     // Branch
     BasicBlock *IfTrue = BasicBlock::Create(C, "BR_T", F);
     BasicBlock *IfFalse = BasicBlock::Create(C, "BR_F", F);
@@ -431,6 +430,7 @@ void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
     }
     case CFGToSink::SinkOrSelfLoop: {
       SmallVector<BasicBlock *, 2> Branches({Sink, BB});
+      // A coin decides which block is true branch.
       uint64_t coin = uniform<uint64_t>(IB.Rand, 0, 1);
       Value *Cond = IB.findOrCreateSource(
           *BB, {}, {}, fuzzerop::SourcePred(Type::getInt1Ty(C)), false);
@@ -480,21 +480,15 @@ void OperandMutatorstrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     return;
 
   // Choose an insertion point for our new instruction.
-  uint64_t IP = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
+  uint64_t Idx = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
+  Instruction *Inst = Insts[Idx];
 
-  auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
-  Instruction *Inst = Insts[IP];
-  uint64_t NumOperands = Inst->getNumOperands();
-  uint64_t Idx = uniform<uint64_t>(IB.Rand, 0, NumOperands - 1);
-  Type *Ty = Inst->getOperand(Idx)->getType();
-  // Changing these types may potentially break the module.
-  if (Ty->isLabelTy() || Ty->isMetadataTy() || Ty->isFunctionTy() ||
-      Ty->isPointerTy()) {
-    return;
-  }
-  Value *NewOperand =
-      IB.findOrCreateSource(BB, InstsBefore, {}, fuzzerop::SourcePred(Ty));
-  Inst->setOperand(Idx, NewOperand);
+  // `Idx + 1` so we don't sink to ourselves.
+  auto InstsAfter = makeArrayRef(Insts).slice(Idx + 1);
+  LLVMContext &C = BB.getParent()->getParent()->getContext();
+  if (Inst->getType() != Type::getVoidTy(C))
+    // Find a new sink and wire up the results of the operation.
+    IB.connectToSink(BB, InstsAfter, Inst);
 }
 
 std::unique_ptr<Module> llvm::parseModule(const uint8_t *Data, uint64_t Size,
