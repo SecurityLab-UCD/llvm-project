@@ -37,7 +37,7 @@ void IRMutationStrategy::mutate(Module &M, RandomIRBuilder &IB) {
 
   // Should we have more functions?
   while (RS.totalWeight() < 1) {
-    Function *F = IB.createFunctionDefinition(M, 0, 5);
+    Function *F = IB.createFunctionDefinition(M, 0, 10);
     RS.sample(F, /*Weight=*/1);
   }
   mutate(*RS.getSelection(), IB);

@@ -69,11 +69,43 @@ SmallVector<uint64_t, 4> RandomIRBuilder::getRandomPermutation(uint64_t Max) {
   return Ret;
 }
 
+GlobalVariable *
+RandomIRBuilder::findOrCreateGlobalVariable(Module *M, ArrayRef<Value *> Srcs,
+                                            fuzzerop::SourcePred Pred,
+                                            bool *DidCreate) {
+  auto MatchesPred = [&Srcs, &Pred](GlobalVariable *GV) {
+    // Can't directly compare GV's type, as it would be a pointer to the actual
+    // type.
+    return Pred.matches(Srcs, GV->getInitializer());
+  };
+  SmallVector<GlobalVariable *, 4> GlobalVars;
+  for (GlobalVariable &GV : M->globals()) {
+    GlobalVars.push_back(&GV);
+  }
+  auto RS = makeSampler(Rand, make_filter_range(GlobalVars, MatchesPred));
+  RS.sample(nullptr, 1);
+  GlobalVariable *GV = RS.getSelection();
+  if (!GV) {
+    if (DidCreate)
+      *DidCreate = true;
+    using LinkageTypes = GlobalVariable::LinkageTypes;
+    auto TRS = makeSampler<Constant *>(Rand);
+    /// FIXME: This might be incorrect for operands that needs to be constant.
+    /// We shouldn't generate a constnat and save it.
+    TRS.sample(Pred.generate(Srcs, KnownTypes));
+    Constant *Init = TRS.getSelection();
+    Type *Ty = Init->getType();
+    GV = new GlobalVariable(*M, Ty, false, LinkageTypes::ExternalLinkage, Init,
+                            "G");
+  }
+  return GV;
+}
+
 enum SourceType {
   PrevValueInBlock,
   FunctionArgument,
   ValueInDominator,
-  GlobalStaticVari,
+  SrcFromGlobalVar,
   NewSource,
   EndOfValueSource,
 };
@@ -138,9 +170,32 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
       }
       break;
     }
-    case GlobalStaticVari: {
-      /// TODO: Add Global Variable.
-      continue;
+    case SrcFromGlobalVar: {
+      Module *M = BB.getParent()->getParent();
+      bool DidCreate = false;
+      GlobalVariable *GV =
+          findOrCreateGlobalVariable(M, Srcs, Pred, &DidCreate);
+      Type *Ty = GV->getType()->getNonOpaquePointerElementType();
+      LoadInst *LoadGV = nullptr;
+      if (BB.getTerminator()) {
+        LoadGV = new LoadInst(Ty, GV, "LGV", &*BB.getFirstInsertionPt());
+      } else {
+        LoadGV = new LoadInst(Ty, GV, "LGV", &BB);
+      }
+      // Because we might be generating new values, we have to check if it
+      // matches again.
+      if (DidCreate) {
+        if (Pred.matches(Srcs, LoadGV)) {
+          return LoadGV;
+        } else {
+          LoadGV->eraseFromParent();
+          // If no one is using this GlobalVariable, delete it too.
+          if (GV->hasNUses(0)) {
+            GV->eraseFromParent();
+          }
+        }
+      }
+      break;
     }
     case NewSource: {
       return newSource(BB, Insts, Srcs, Pred, AllowConstant);
@@ -251,6 +306,7 @@ enum SinkType {
   PointersInDom,
   InstInDominees,
   NewSink,
+  SinkToGlobalVar,
   EndOfValueSink,
 };
 void RandomIRBuilder::connectToSink(BasicBlock &BB,
@@ -311,6 +367,13 @@ void RandomIRBuilder::connectToSink(BasicBlock &BB,
         if (findSinkAndConnect(Instructions))
           return;
       }
+      break;
+    }
+    case SinkToGlobalVar: {
+      Module *M = BB.getParent()->getParent();
+      fuzzerop::SourcePred ExactType(V->getType());
+      GlobalVariable *GV = findOrCreateGlobalVariable(M, {}, ExactType);
+      new StoreInst(V, GV, Insts.back());
       break;
     }
     case NewSink:

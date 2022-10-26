@@ -25,6 +25,7 @@ class Type;
 class Value;
 class Module;
 class Function;
+class GlobalVariable;
 namespace fuzzerop {
 class SourcePred;
 }
@@ -38,11 +39,15 @@ struct RandomIRBuilder {
   RandomIRBuilder(int Seed, ArrayRef<Type *> AllowedTypes)
       : Rand(Seed), KnownTypes(AllowedTypes.begin(), AllowedTypes.end()) {}
 
+  GlobalVariable *findOrCreateGlobalVariable(Module *M, ArrayRef<Value *> Srcs,
+                                             fuzzerop::SourcePred Pred,
+                                             bool *DidCreate = nullptr);
+
   // TODO: Try to make this a bit less of a random mishmash of functions.
 
   /// Find a "source" for some operation, which will be used in one of the
-  /// operation's operands. This either selects an instruction in \c Insts or
-  /// returns some new arbitrary Value.
+  /// operation's operands. This either selects an instruction in \c Insts
+  /// or returns some new arbitrary Value.
   Value *findOrCreateSource(BasicBlock &BB, ArrayRef<Instruction *> Insts);
   /// Find a "source" for some operation, which will be used in one of the
   /// operation's operands. This either selects an instruction in \c Insts that
