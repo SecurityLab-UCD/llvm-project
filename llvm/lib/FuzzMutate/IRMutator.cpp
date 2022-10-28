@@ -399,7 +399,7 @@ enum CFGToSink {
   EndOfCFGToLink
 };
 
-/// The caller has to guarantee that thest blocks are "empty", i.e. it doesn't
+/// The caller has to guarantee that these blocks are "empty", i.e. it doesn't
 /// even have terminator.
 void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
                                         BasicBlock *Sink, RandomIRBuilder &IB) {
@@ -444,7 +444,7 @@ void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
   }
 }
 
-void InsertPHItrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+void InsertPHIStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   // Can't insert PHI node to entry node.
   if (&BB == &BB.getParent()->getEntryBlock()) {
     return;
@@ -468,12 +468,12 @@ void InsertPHItrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   IB.connectToSink(BB, InstsAfter, PHI);
 }
 
-void OperandMutatorstrategy::mutate(Function &F, RandomIRBuilder &IB) {
+void OperandMutatorStrategy::mutate(Function &F, RandomIRBuilder &IB) {
   for (BasicBlock &BB : F) {
     this->mutate(BB, IB);
   }
 }
-void OperandMutatorstrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+void OperandMutatorStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   SmallVector<Instruction *, 32> Insts;
   for (auto I = BB.getFirstInsertionPt(), E = BB.end(); I != E; ++I)
     Insts.push_back(&*I);
