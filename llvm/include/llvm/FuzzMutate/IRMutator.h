@@ -140,7 +140,7 @@ public:
                            RandomIRBuilder &IB);
 };
 
-class InsertPHItrategy : public IRMutationStrategy {
+class InsertPHIStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
                      uint64_t CurrentWeight) override {
@@ -151,7 +151,7 @@ public:
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 };
 
-class OperandMutatorstrategy : public IRMutationStrategy {
+class OperandMutatorStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
                      uint64_t CurrentWeight) override {
