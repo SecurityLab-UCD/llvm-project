@@ -109,7 +109,7 @@ class InstModificationIRStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
                      uint64_t CurrentWeight) override {
-    return 4;
+    return 5;
   }
 
   using IRMutationStrategy::mutate;
@@ -131,7 +131,7 @@ class CFGIRStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
                      uint64_t CurrentWeight) override {
-    return 4;
+    return 5;
   }
 
   using IRMutationStrategy::mutate;
@@ -144,7 +144,7 @@ class InsertPHItrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
                      uint64_t CurrentWeight) override {
-    return 1;
+    return 2;
   }
 
   using IRMutationStrategy::mutate;
@@ -155,7 +155,7 @@ class OperandMutatorstrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
                      uint64_t CurrentWeight) override {
-    return 1;
+    return 2;
   }
 
   using IRMutationStrategy::mutate;

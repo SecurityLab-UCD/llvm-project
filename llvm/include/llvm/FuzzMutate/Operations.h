@@ -30,6 +30,7 @@ void describeFuzzerAggregateOps(std::vector<fuzzerop::OpDescriptor> &Ops);
 void describeFuzzerVectorOps(std::vector<fuzzerop::OpDescriptor> &Ops);
 void describeFuzzerUnaryOperations(std::vector<fuzzerop::OpDescriptor> &Ops);
 void describeFuzzerOtherOps(std::vector<fuzzerop::OpDescriptor> &Ops);
+void describeFuzzerCastOps(std::vector<fuzzerop::OpDescriptor> &Ops);
 /// @}
 
 namespace fuzzerop {
@@ -49,6 +50,7 @@ OpDescriptor extractElementDescriptor(unsigned Weight);
 OpDescriptor insertElementDescriptor(unsigned Weight);
 OpDescriptor shuffleVectorDescriptor(unsigned Weight);
 OpDescriptor callDescriptor(unsigned Weight);
+OpDescriptor castOpDescriptor(unsigned Weight, Instruction::CastOps Op);
 /// @}
 
 } // namespace fuzzerop

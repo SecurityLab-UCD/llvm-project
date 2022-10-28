@@ -18,6 +18,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Type.h"
 #include "llvm/IR/Value.h"
 #include <functional>
@@ -131,32 +132,43 @@ static inline SourcePred anyIntType() {
   return {Pred, Make};
 }
 
-static inline SourcePred anyIntOrVecIntType() {
+static inline SourcePred anyPointerType() {
   auto Pred = [](ArrayRef<Value *>, const Value *V) {
-    Type *Ty = V->getType();
-    if (VectorType *VecTy = dyn_cast<VectorType>(Ty)) {
-      Ty = VecTy->getElementType();
-    }
-    return Ty->isIntegerTy();
+    return V->getType()->isPointerTy();
   };
   auto Make = None;
   return {Pred, Make};
 }
 
-static inline SourcePred boolOrVecBoolType() {
-  auto Pred = [](ArrayRef<Value *>, const Value *V) {
+using TypeMatch = std::function<bool(Type *)>;
+static inline SourcePred anyXOrVecXType(TypeMatch IT) {
+  auto Pred = [IT](ArrayRef<Value *>, const Value *V) {
     Type *Ty = V->getType();
     if (VectorType *VecTy = dyn_cast<VectorType>(Ty)) {
       Ty = VecTy->getElementType();
     }
+    return IT(Ty);
+  };
+  auto Make = None;
+  return {Pred, Make};
+}
+
+static inline SourcePred anyPointerOrVecPointerType() {
+  return anyXOrVecXType([](Type *Ty) { return Ty->isPointerTy(); });
+}
+
+static inline SourcePred anyIntOrVecIntType() {
+  return anyXOrVecXType([](Type *Ty) { return Ty->isIntegerTy(); });
+}
+
+static inline SourcePred boolOrVecBoolType() {
+  return anyXOrVecXType([](Type *Ty) {
     if (IntegerType *IntTy = dyn_cast<IntegerType>(Ty)) {
       return IntTy->getBitWidth() == 1;
     } else {
       return false;
     }
-  };
-  auto Make = None;
-  return {Pred, Make};
+  });
 }
 
 static inline SourcePred anyFloatType() {
@@ -167,15 +179,7 @@ static inline SourcePred anyFloatType() {
   return {Pred, Make};
 }
 static inline SourcePred anyFloatOrVecFloatType() {
-  auto Pred = [](ArrayRef<Value *>, const Value *V) {
-    Type *Ty = V->getType();
-    if (VectorType *VecTy = dyn_cast<VectorType>(Ty)) {
-      Ty = VecTy->getElementType();
-    }
-    return Ty->isFloatingPointTy();
-  };
-  auto Make = None;
-  return {Pred, Make};
+  return anyXOrVecXType([](Type *Ty) { return Ty->isFloatingPointTy(); });
 }
 
 static inline SourcePred anyPtrType() {
@@ -318,6 +322,15 @@ static inline SourcePred matchScalarOfFirstType() {
     assert(!Cur.empty() && "No first source yet");
     return makeConstantsWithType(Cur[0]->getType()->getScalarType());
   };
+  return {Pred, Make};
+}
+
+static inline SourcePred validCastType(llvm::Instruction::CastOps Op) {
+  auto Pred = [Op](ArrayRef<Value *> Cur, const Value *V) {
+    assert(!Cur.empty() && "No first source yet");
+    return CastInst::castIsValid(Op, Cur[0]->getType(), V->getType());
+  };
+  auto Make = None;
   return {Pred, Make};
 }
 
