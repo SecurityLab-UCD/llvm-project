@@ -24,7 +24,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           cmake \
-            -build build-release \
+            -B build-release \
             -GNinja \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
