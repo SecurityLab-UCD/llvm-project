@@ -31,37 +31,25 @@ std::unique_ptr<IRMutator> createInjectorMutator() {
       Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy};
 
   std::vector<std::unique_ptr<IRMutationStrategy>> Strategies;
-  Strategies.push_back(
-      std::make_unique<InjectorIRStrategy>(
-          InjectorIRStrategy::getDefaultOps()));
+  Strategies.push_back(std::make_unique<InjectorIRStrategy>(
+      InjectorIRStrategy::getDefaultOps()));
 
   return std::make_unique<IRMutator>(std::move(Types), std::move(Strategies));
 }
 
-std::unique_ptr<IRMutator> createDeleterMutator() {
+template <class Strategy> std::unique_ptr<IRMutator> createMutator() {
   std::vector<TypeGetter> Types{
       Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty, Type::getInt32Ty,
       Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy};
 
   std::vector<std::unique_ptr<IRMutationStrategy>> Strategies;
-  Strategies.push_back(std::make_unique<InstDeleterIRStrategy>());
+  Strategies.push_back(std::make_unique<Strategy>());
 
   return std::make_unique<IRMutator>(std::move(Types), std::move(Strategies));
 }
 
-std::unique_ptr<IRMutator> createInstModifierMutator() {
-  std::vector<TypeGetter> Types{
-      Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty, Type::getInt32Ty,
-      Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy};
-
-  std::vector<std::unique_ptr<IRMutationStrategy>> Strategies;
-  Strategies.push_back(std::make_unique<InstModificationIRStrategy>());
-
-  return std::make_unique<IRMutator>(std::move(Types), std::move(Strategies));
-}
-
-std::unique_ptr<Module> parseAssembly(
-    const char *Assembly, LLVMContext &Context) {
+std::unique_ptr<Module> parseAssembly(const char *Assembly,
+                                      LLVMContext &Context) {
 
   SMDiagnostic Error;
   std::unique_ptr<Module> M = parseAssemblyString(Assembly, Error, Context);
@@ -104,17 +92,17 @@ TEST(InstDeleterIRStrategyTest, EmptyFunction) {
   // Test that we don't crash even if we can't remove from one of the functions.
 
   StringRef Source = ""
-      "define <8 x i32> @func1() {\n"
-        "ret <8 x i32> undef\n"
-      "}\n"
-      "\n"
-      "define i32 @func2() {\n"
-        "%A9 = alloca i32\n"
-        "%L6 = load i32, i32* %A9\n"
-        "ret i32 %L6\n"
-      "}\n";
+                     "define <8 x i32> @func1() {\n"
+                     "ret <8 x i32> undef\n"
+                     "}\n"
+                     "\n"
+                     "define i32 @func2() {\n"
+                     "%A9 = alloca i32\n"
+                     "%L6 = load i32, i32* %A9\n"
+                     "ret i32 %L6\n"
+                     "}\n";
 
-  auto Mutator = createDeleterMutator();
+  auto Mutator = createMutator<InstDeleterIRStrategy>();
   ASSERT_TRUE(Mutator);
 
   IterateOnSource(Source, *Mutator);
@@ -140,7 +128,7 @@ TEST(InstDeleterIRStrategyTest, PhiNodes) {
         ret i32 %a.0\n\
       }";
 
-  auto Mutator = createDeleterMutator();
+  auto Mutator = createMutator<InstDeleterIRStrategy>();
   ASSERT_TRUE(Mutator);
 
   IterateOnSource(Source, *Mutator);
@@ -155,7 +143,7 @@ static void checkModifyNoUnsignedAndNoSignedWrap(StringRef Opc) {
         ret i32 %a\n\
       }");
 
-  auto Mutator = createInstModifierMutator();
+  auto Mutator = createMutator<InstModificationIRStrategy>();
   ASSERT_TRUE(Mutator);
 
   auto M = parseAssembly(Source.data(), Ctx);
@@ -199,7 +187,7 @@ TEST(InstModificationIRStrategyTest, ICmp) {
         ret i1 %a\n\
       }";
 
-  auto Mutator = createInstModifierMutator();
+  auto Mutator = createMutator<InstModificationIRStrategy>();
   ASSERT_TRUE(Mutator);
 
   auto M = parseAssembly(Source.data(), Ctx);
@@ -224,7 +212,7 @@ TEST(InstModificationIRStrategyTest, GEP) {
         ret i32* %gep\n\
       }";
 
-  auto Mutator = createInstModifierMutator();
+  auto Mutator = createMutator<InstModificationIRStrategy>();
   ASSERT_TRUE(Mutator);
 
   auto M = parseAssembly(Source.data(), Ctx);
@@ -240,4 +228,4 @@ TEST(InstModificationIRStrategyTest, GEP) {
 
   EXPECT_TRUE(FoundInbounds);
 }
-}
+} // namespace

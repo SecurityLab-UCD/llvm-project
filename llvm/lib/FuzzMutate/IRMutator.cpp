@@ -266,7 +266,7 @@ void FunctionIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   SmallVector<fuzzerop::SourcePred, 2> SourcePreds;
   if (F->arg_size() != 0) {
     for (Type *ArgTy : FTy->params()) {
-      SourcePreds.push_back(fuzzerop::SourcePred(ArgTy));
+      SourcePreds.push_back(fuzzerop::onlyType(ArgTy));
     }
   }
   bool isRetVoid = (F->getReturnType() == Type::getVoidTy(M->getContext()));
@@ -330,7 +330,7 @@ void CFGIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     BasicBlock *IfFalse = BasicBlock::Create(C, "BR_F", F);
     Value *Cond =
         IB.findOrCreateSource(*Source, InstsBefore, {},
-                              fuzzerop::SourcePred(Type::getInt1Ty(C)), false);
+                              fuzzerop::onlyType(Type::getInt1Ty(C)), false);
     BranchInst *Branch = BranchInst::Create(IfTrue, IfFalse, Cond);
     // Remove the old terminator.
     ReplaceInstWithInst(Source->getTerminator(), Branch);
@@ -354,7 +354,7 @@ void CFGIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
         BitSize >= 64 ? 0xffffffffffffffff : ((uint64_t)1 << BitSize) - 1;
     // Create Switch inst in Block
     Value *Cond = IB.findOrCreateSource(*Source, InstsBefore, {},
-                                        fuzzerop::SourcePred(Ty), false);
+                                        fuzzerop::onlyType(Ty), false);
     BasicBlock *DefaultBlock = BasicBlock::Create(C, "SW_D", F);
     uint64_t NumCase = uniform<uint64_t>(IB.Rand, 1, 8);
     // Make sure we don't have more case than this type can handle.
@@ -420,7 +420,7 @@ void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
       Value *RetValue = nullptr;
       if (RetTy != Type::getVoidTy(C)) {
         RetValue =
-            IB.findOrCreateSource(*BB, {}, {}, fuzzerop::SourcePred(RetTy));
+            IB.findOrCreateSource(*BB, {}, {}, fuzzerop::onlyType(RetTy));
       }
       ReturnInst::Create(C, RetValue, BB);
       break;
@@ -434,7 +434,7 @@ void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
       // A coin decides which block is true branch.
       uint64_t coin = uniform<uint64_t>(IB.Rand, 0, 1);
       Value *Cond = IB.findOrCreateSource(
-          *BB, {}, {}, fuzzerop::SourcePred(Type::getInt1Ty(C)), false);
+          *BB, {}, {}, fuzzerop::onlyType(Type::getInt1Ty(C)), false);
       BranchInst::Create(Branches[coin], Branches[1 - coin], Cond, BB);
       break;
     }
@@ -451,14 +451,14 @@ void InsertPHIStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   }
   Type *Ty = IB.randomType();
   PHINode *PHI = PHINode::Create(Ty, llvm::pred_size(&BB), "", &BB.front());
-  auto Pred = fuzzerop::SourcePred(Ty);
 
   SmallVector<Value *, 4> Srcs;
   for (BasicBlock *Prev : predecessors(&BB)) {
     SmallVector<Instruction *, 32> Insts;
     for (auto I = Prev->begin(); I != Prev->end(); ++I)
       Insts.push_back(&*I);
-    Value *Src = IB.findOrCreateSource(*Prev, Insts, Srcs, Pred);
+    Value *Src =
+        IB.findOrCreateSource(*Prev, Insts, Srcs, fuzzerop::onlyType(Ty));
     Srcs.push_back(Src);
     PHI->addIncoming(Src, Prev);
   }

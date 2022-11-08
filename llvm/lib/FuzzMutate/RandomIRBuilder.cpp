@@ -371,8 +371,8 @@ void RandomIRBuilder::connectToSink(BasicBlock &BB,
     }
     case SinkToGlobalVar: {
       Module *M = BB.getParent()->getParent();
-      fuzzerop::SourcePred ExactType(V->getType());
-      GlobalVariable *GV = findOrCreateGlobalVariable(M, {}, ExactType);
+      GlobalVariable *GV =
+          findOrCreateGlobalVariable(M, {}, fuzzerop::onlyType(V->getType()));
       new StoreInst(V, GV, Insts.back());
       break;
     }
