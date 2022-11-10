@@ -175,7 +175,7 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
       bool DidCreate = false;
       GlobalVariable *GV =
           findOrCreateGlobalVariable(M, Srcs, Pred, &DidCreate);
-      Type *Ty = GV->getType()->getNonOpaquePointerElementType();
+      Type *Ty = GV->getInitializer()->getType();
       LoadInst *LoadGV = nullptr;
       if (BB.getTerminator()) {
         LoadGV = new LoadInst(Ty, GV, "LGV", &*BB.getFirstInsertionPt());
