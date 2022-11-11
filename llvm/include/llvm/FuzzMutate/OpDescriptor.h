@@ -118,14 +118,6 @@ static inline SourcePred anyIntType() {
   return {Pred, Make};
 }
 
-static inline SourcePred anyPointerType() {
-  auto Pred = [](ArrayRef<Value *>, const Value *V) {
-    return V->getType()->isPointerTy();
-  };
-  auto Make = None;
-  return {Pred, Make};
-}
-
 using TypeMatch = std::function<bool(Type *)>;
 static inline SourcePred anyXOrVecXType(TypeMatch IT) {
   auto Pred = [IT](ArrayRef<Value *>, const Value *V) {
@@ -139,7 +131,7 @@ static inline SourcePred anyXOrVecXType(TypeMatch IT) {
   return {Pred, Make};
 }
 
-static inline SourcePred anyPointerOrVecPointerType() {
+static inline SourcePred anyPtrOrVecPtrType() {
   return anyXOrVecXType([](Type *Ty) { return Ty->isPointerTy(); });
 }
 

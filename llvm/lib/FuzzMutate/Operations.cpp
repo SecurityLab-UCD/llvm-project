@@ -380,7 +380,8 @@ OpDescriptor llvm::fuzzerop::castOpDescriptor(unsigned Weight,
   switch (Op) {
   case Instruction::AddrSpaceCast:
   case Instruction::BitCast: {
-    /// TODO:
+    /// TODO: We forbids BitCase in case the mutator wants to case types with
+    /// different bitcounts.
     break;
   }
   case Instruction::FPExt: {
@@ -399,12 +400,12 @@ OpDescriptor llvm::fuzzerop::castOpDescriptor(unsigned Weight,
   }
   case Instruction::IntToPtr: {
     /// TODO: We forbits vector int to vector pointer cast now.
-    /// That needs us to have all pointer types ready.
+    /// That needs us to have all pointer types of the same length ready.
     return {Weight, {anyIntType(), validCastType(Op)}, buildOp};
     break;
   }
   case Instruction::PtrToInt: {
-    return {Weight, {anyPointerOrVecPointerType(), validCastType(Op)}, buildOp};
+    return {Weight, {anyPtrOrVecPtrType(), validCastType(Op)}, buildOp};
     break;
   }
   case Instruction::FPToSI:

@@ -91,10 +91,13 @@ TEST(OperationsTest, SourcePreds) {
   Constant *s = ConstantStruct::get(StructType::create(Ctx, "OpaqueStruct"));
   Constant *a =
       ConstantArray::get(ArrayType::get(i32->getType(), 2), {i32, i32});
+  Constant *v8i1 = ConstantVector::getSplat(ElementCount::getFixed(8), i1);
   Constant *v8i8 = ConstantVector::getSplat(ElementCount::getFixed(8), i8);
   Constant *v4f16 = ConstantVector::getSplat(ElementCount::getFixed(4), f16);
   Constant *p0i32 =
       ConstantPointerNull::get(PointerType::get(i32->getType(), 0));
+  Constant *v8p0i32 =
+      ConstantVector::getSplat(ElementCount::getFixed(8), p0i32);
 
   auto OnlyI32 = onlyType(i32->getType());
   EXPECT_TRUE(OnlyI32.matches({}, i32));
@@ -126,6 +129,28 @@ TEST(OperationsTest, SourcePreds) {
       AnyInt.generate({}, {i32->getType(), f16->getType(), v8i8->getType()}),
       AllOf(SizeIs(Ge(1u)), Each(TypesMatch(i32))));
 
+  auto AnyIntOrVecInt = anyIntOrVecIntType();
+  EXPECT_TRUE(AnyIntOrVecInt.matches({}, i1));
+  EXPECT_TRUE(AnyIntOrVecInt.matches({}, i64));
+  EXPECT_FALSE(AnyIntOrVecInt.matches({}, f32));
+  EXPECT_FALSE(AnyIntOrVecInt.matches({}, v4f16));
+  EXPECT_TRUE(AnyIntOrVecInt.matches({}, v8i8));
+  EXPECT_FALSE(AnyIntOrVecInt.matches({}, v4f16));
+
+  EXPECT_THAT(AnyIntOrVecInt.generate({}, {v8i8->getType()}),
+              AllOf(Each(TypesMatch(v8i8))));
+
+  auto BoolOrVecBool = boolOrVecBoolType();
+  EXPECT_TRUE(BoolOrVecBool.matches({}, i1));
+  EXPECT_FALSE(BoolOrVecBool.matches({}, i64));
+  EXPECT_FALSE(BoolOrVecBool.matches({}, f32));
+  EXPECT_FALSE(BoolOrVecBool.matches({}, v4f16));
+  EXPECT_TRUE(BoolOrVecBool.matches({}, v8i1));
+  EXPECT_FALSE(BoolOrVecBool.matches({}, v4f16));
+
+  EXPECT_THAT(BoolOrVecBool.generate({}, {v8i8->getType(), v8i1->getType()}),
+              AllOf(Each(TypesMatch(v8i1))));
+
   auto AnyFP = anyFloatType();
   EXPECT_TRUE(AnyFP.matches({}, f16));
   EXPECT_TRUE(AnyFP.matches({}, f32));
@@ -137,6 +162,19 @@ TEST(OperationsTest, SourcePreds) {
       AnyFP.generate({}, {i32->getType(), f16->getType(), v8i8->getType()}),
       AllOf(SizeIs(Ge(1u)), Each(TypesMatch(f16))));
 
+  auto AnyFPOrVecFP = anyFloatOrVecFloatType();
+  EXPECT_TRUE(AnyFPOrVecFP.matches({}, f16));
+  EXPECT_TRUE(AnyFPOrVecFP.matches({}, f32));
+  EXPECT_FALSE(AnyFPOrVecFP.matches({}, i16));
+  EXPECT_FALSE(AnyFPOrVecFP.matches({}, p0i32));
+  EXPECT_TRUE(AnyFPOrVecFP.matches({}, v4f16));
+
+  EXPECT_THAT(AnyFPOrVecFP.generate(
+                  {}, {i32->getType(), f16->getType(), v8i8->getType()}),
+              AllOf(SizeIs(Ge(1u)), Each(TypesMatch(f16))));
+  EXPECT_THAT(AnyFPOrVecFP.generate({}, {v4f16->getType()}),
+              AllOf(SizeIs(Ge(1u)), Each(TypesMatch(v4f16))));
+
   auto AnyPtr = anyPtrType();
   EXPECT_TRUE(AnyPtr.matches({}, p0i32));
   EXPECT_FALSE(AnyPtr.matches({}, i8));
@@ -147,6 +185,16 @@ TEST(OperationsTest, SourcePreds) {
   EXPECT_THAT(
       AnyPtr.generate({}, {i32->getType(), f16->getType(), v8i8->getType()}),
       AllOf(SizeIs(Ge(3u)), Each(Truly(isPointer))));
+
+  auto AnyPtrOrVecPtr = anyPtrOrVecPtrType();
+  EXPECT_TRUE(AnyPtrOrVecPtr.matches({}, p0i32));
+  EXPECT_TRUE(AnyPtrOrVecPtr.matches({}, v8p0i32));
+  EXPECT_FALSE(AnyPtrOrVecPtr.matches({}, i8));
+  EXPECT_FALSE(AnyPtrOrVecPtr.matches({}, a));
+  EXPECT_FALSE(AnyPtrOrVecPtr.matches({}, v8i8));
+
+  EXPECT_THAT(AnyPtrOrVecPtr.generate({}, {v8p0i32->getType()}),
+              AllOf(Each(TypesMatch(v8p0i32))));
 
   auto AnyVec = anyVectorType();
   EXPECT_TRUE(AnyVec.matches({}, v8i8));
@@ -166,6 +214,35 @@ TEST(OperationsTest, SourcePreds) {
   EXPECT_THAT(First.generate({i8}, {}), Each(TypesMatch(i8)));
   EXPECT_THAT(First.generate({f16}, {i8->getType()}), Each(TypesMatch(f16)));
   EXPECT_THAT(First.generate({v8i8, i32}, {}), Each(TypesMatch(v8i8)));
+
+  auto FirstLength = matchFirstLengthWAnyType();
+  EXPECT_TRUE(FirstLength.matches({v8i8}, v8i1));
+
+  EXPECT_THAT(FirstLength.generate({v8i1}, {i8->getType()}),
+              Each(TypesMatch(v8i8)));
+
+  auto Second = matchSecondType();
+  EXPECT_TRUE(Second.matches({i32, i8}, i8));
+  EXPECT_TRUE(Second.matches({i8, f16}, f16));
+
+  EXPECT_THAT(Second.generate({v8i8, i32}, {}), Each(TypesMatch(i32)));
+  EXPECT_THAT(Second.generate({f32, f16}, {f16->getType()}),
+              Each(TypesMatch(f16)));
+
+  auto FirstScalar = matchScalarOfFirstType();
+  EXPECT_TRUE(FirstScalar.matches({v8i8}, i8));
+  EXPECT_TRUE(FirstScalar.matches({i8}, i8));
+  EXPECT_TRUE(FirstScalar.matches({v4f16}, f16));
+
+  EXPECT_THAT(FirstScalar.generate({v8i8}, {i8->getType()}),
+              Each(TypesMatch(i8)));
+
+  auto ValidCast = validCastType(Instruction::SIToFP);
+  EXPECT_TRUE(ValidCast.matches({i16}, f16));
+  EXPECT_TRUE(ValidCast.matches({i32}, f32));
+
+  EXPECT_THAT(ValidCast.generate({i16}, {f16->getType()}),
+              Each(TypesMatch(f16)));
 }
 
 TEST(OperationsTest, SplitBlock) {
