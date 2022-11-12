@@ -229,6 +229,95 @@ TEST(InstModificationIRStrategyTest, GEP) {
   EXPECT_TRUE(FoundInbounds);
 }
 
+/// The caller has to guarantee that function argument are used in the SAME
+/// place as the operand.
+void VerfyOperandShuffled(StringRef Source, std::pair<int, int> ShuffleItems) {
+  LLVMContext Ctx;
+  auto Mutator = createMutator<InstModificationIRStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source.data(), Ctx);
+  auto &F = *M->begin();
+  Instruction *Inst = &*F.begin()->begin();
+  ASSERT_TRUE(M && !verifyModule(*M, &errs()));
+  ASSERT_TRUE(Inst->getOperand(ShuffleItems.first) ==
+              dyn_cast<Value>(F.getArg(ShuffleItems.first)));
+  ASSERT_TRUE(Inst->getOperand(ShuffleItems.second) ==
+              dyn_cast<Value>(F.getArg(ShuffleItems.second)));
+
+  // Use Seed = 0 so the first instruction is selected.
+  Mutator->mutateModule(*M, 0, Source.size(), Source.size() + 100);
+  EXPECT_TRUE(!verifyModule(*M, &errs()));
+
+  EXPECT_TRUE(Inst->getOperand(ShuffleItems.first) ==
+              dyn_cast<Value>(F.getArg(ShuffleItems.second)));
+  EXPECT_TRUE(Inst->getOperand(ShuffleItems.second) ==
+              dyn_cast<Value>(F.getArg(ShuffleItems.first)));
+}
+
+TEST(InstModificationIRStrategyTest, ShuffleFAdd) {
+  StringRef Source = "\n\
+      define float @test(float %0, float %1) {\n\
+        %add = fadd float %0, %1\n\
+        ret float %add\n\
+      }";
+  VerfyOperandShuffled(Source, {0, 1});
+}
+TEST(InstModificationIRStrategyTest, ShuffleICMP) {
+  StringRef Source = "\n\
+      define <8 x i1> @test(<8 x i32> %0, <8 x i32> %1) {\n\
+        %cmp = icmp eq <8 x i32> %0, %1\n\
+        ret <8 x i1> %cmp\n\
+      }";
+  VerfyOperandShuffled(Source, {0, 1});
+}
+
+TEST(InstModificationIRStrategyTest, ShuffleSelect) {
+  StringRef Source = "\n\
+      define float @test(i1 %0, float %1, float %2) {\n\
+        %select = select i1 %0, float %1, float %2\n\
+        ret float %select\n\
+      }";
+  VerfyOperandShuffled(Source, {1, 2});
+}
+
+void VerfyDivDidntShuffle(StringRef Source) {
+  LLVMContext Ctx;
+  auto Mutator = createMutator<InstModificationIRStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source.data(), Ctx);
+  auto &F = *M->begin();
+  Instruction *Inst = &*F.begin()->begin();
+  ASSERT_TRUE(M && !verifyModule(*M, &errs()));
+
+  EXPECT_TRUE(isa<Constant>(Inst->getOperand(0)));
+  EXPECT_TRUE(Inst->getOperand(1) == dyn_cast<Value>(F.getArg(0)));
+
+  Mutator->mutateModule(*M, Seed, Source.size(), Source.size() + 100);
+  EXPECT_TRUE(!verifyModule(*M, &errs()));
+
+  // Didn't shuffle.
+  EXPECT_TRUE(isa<Constant>(Inst->getOperand(0)));
+  EXPECT_TRUE(Inst->getOperand(1) == dyn_cast<Value>(F.getArg(0)));
+}
+TEST(InstModificationIRStrategyTest, DidntShuffleSDiv) {
+  StringRef Source = "\n\
+      define i32 @test(i32 %0) {\n\
+        %div = sdiv i32 0, %0\n\
+        ret i32 %div\n\
+      }";
+  VerfyDivDidntShuffle(Source);
+}
+TEST(InstModificationIRStrategyTest, DidntShuffleFRem) {
+  StringRef Source = "\n\
+      define <2 x double> @test(<2 x double> %0) {\n\
+        %div = frem <2 x double> <double 0.0, double 0.0>, %0\n\
+        ret <2 x double> %div\n\
+      }";
+  VerfyDivDidntShuffle(Source);
+}
+
 TEST(FunctionIRStrategy, Func) {
   LLVMContext Ctx;
   const char *Source = "";
@@ -304,6 +393,79 @@ TEST(OperandMutatorStrategy, Operand) {
   srand(Seed);
   for (int i = 0; i < 100; i++) {
     Mutator->mutateModule(*M, rand(), Source.size(), Source.size() + 1024);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
+
+TEST(ShuffleBlockStrategy, Shuffle) {
+  LLVMContext Ctx;
+  StringRef Source = "\n\
+        define i64 @test(i1 %0, i1 %1, i1 %2, i32 %3, i32 %4) { \n\
+        Entry:  \n\
+          %A = alloca i32, i32 8, align 4 \n\
+          %E.1 = and i32 %3, %4 \n\
+          %E.2 = add i32 %4 , 1 \n\
+          %A.GEP.1 = getelementptr i32, i32* %A, i32 0 \n\
+          %A.GEP.2 = getelementptr i32, i32* %A.GEP.1, i32 1 \n\
+          %L.2 = load i32, i32* %A.GEP.2 \n\
+          %L.1 = load i32, i32* %A.GEP.1 \n\
+          %E.3 = sub i32 %E.2, %L.1 \n\
+          %Cond.1 = icmp eq i32 %E.3, %E.2 \n\
+          %Cond.2 = and i1 %0, %1 \n\
+          %Cond = or i1 %Cond.1, %Cond.2 \n\
+          br i1 %Cond, label %BB0, label %BB1  \n\
+        BB0:  \n\
+          %Add = add i32 %L.1, %L.2 \n\
+          %Sub = sub i32 %L.1, %L.2 \n\
+          %Sub.1 = sub i32 %Sub, 12 \n\
+          %Cast.1 = bitcast i32 %4 to float \n\
+          %Add.2 = add i32 %3, 1 \n\
+          %Cast.2 = bitcast i32 %Add.2 to float \n\
+          %FAdd = fadd float %Cast.1, %Cast.2 \n\
+          %Add.3 = add i32 %L.2, %L.1 \n\
+          %Cast.3 = bitcast float %FAdd to i32 \n\
+          %Sub.2 = sub i32 %Cast.3, %Sub.1 \n\
+          %SExt = sext i32 %Cast.3 to i64 \n\
+          %A64 = bitcast i32* %A to i64* \n\
+          %A.GEP.3 = getelementptr i64, i64* %A64, i32 1 \n\
+          store i64 %SExt, i64* %A.GEP.3 \n\
+          br label %Exit  \n\
+        BB1:  \n\
+          %PHI.1 = phi i32 [0, %Entry] \n\
+          %SExt.1 = sext i1 %Cond.2 to i32 \n\
+          %SExt.2 = sext i1 %Cond.1 to i32 \n\
+          %E.164 = zext i32 %E.1 to i64 \n\
+          %E.264 = zext i32 %E.2 to i64 \n\
+          %E.1264 = mul i64 %E.164, %E.264 \n\
+          %E.12 = trunc i64 %E.1264 to i32 \n\
+          %A.GEP.4 = getelementptr i32, i32* %A, i32 2 \n\
+          %A.GEP.5 = getelementptr i32, i32* %A.GEP.4, i32 2 \n\
+          store i32 %E.12, i32* %A.GEP.5 \n\
+          br label %Exit  \n\
+        Exit:  \n\
+          %PHI.2 = phi i32 [%Add, %BB0], [%E.3, %BB1] \n\
+          %PHI.3 = phi i64 [%SExt, %BB0], [%E.1264, %BB1] \n\
+          %ZExt = zext i32 %PHI.2 to i64 \n\
+          %Add.5 = add i64 %PHI.3, 3 \n\
+          ret i64 %Add.5  \n\
+      }";
+  auto Mutator = createMutator<ShuffleBlockStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source.data(), Ctx);
+  Function *F = &*M->begin();
+  SmallVector<int, 4> InstCnts({12, 15, 11, 5});
+  SmallVector<BasicBlock *, 4> BlockList;
+  for (BasicBlock &BB : F->getBasicBlockList()) {
+    BlockList.push_back(&BB);
+  }
+  srand(Seed);
+  for (int i = 0; i < 100; i++) {
+    Mutator->mutateModule(*M, rand(), Source.size(), Source.size() + 1024);
+    for (int i = 0; i < 4; i++) {
+      int InstCnt = std::distance(BlockList[i]->begin(), BlockList[i]->end());
+      EXPECT_TRUE(InstCnt == InstCnts[i]);
+    }
     EXPECT_TRUE(!verifyModule(*M, &errs()));
   }
 }

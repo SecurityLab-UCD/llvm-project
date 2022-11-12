@@ -211,8 +211,6 @@ void InstModificationIRStrategy::mutate(Instruction &Inst,
   CmpInst *CI = nullptr;
   GetElementPtrInst *GEP = nullptr;
   switch (Inst.getOpcode()) {
-  default:
-    break;
   case Instruction::Add:
   case Instruction::Mul:
   case Instruction::Sub:
@@ -221,7 +219,6 @@ void InstModificationIRStrategy::mutate(Instruction &Inst,
     Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(false); });
     Modifications.push_back([&Inst]() { Inst.setHasNoUnsignedWrap(true); });
     Modifications.push_back([&Inst]() { Inst.setHasNoUnsignedWrap(false); });
-
     break;
   case Instruction::ICmp:
     CI = cast<ICmpInst>(&Inst);
@@ -241,6 +238,53 @@ void InstModificationIRStrategy::mutate(Instruction &Inst,
     Modifications.push_back([GEP]() { GEP->setIsInBounds(true); });
     Modifications.push_back([GEP]() { GEP->setIsInBounds(false); });
     break;
+  }
+
+  std::pair<int, int> NoneItem({-1, -1}), ShuffleItems(NoneItem);
+  switch (Inst.getOpcode()) {
+  case Instruction::SDiv:
+  case Instruction::UDiv:
+  case Instruction::SRem:
+  case Instruction::URem:
+  case Instruction::FDiv:
+  case Instruction::FRem: {
+    // Verify that the after shuffle the second operand is not
+    // constant 0.
+    Value *Operand = Inst.getOperand(0);
+    if (Constant *C = dyn_cast<Constant>(Operand)) {
+      if (!C->isZeroValue()) {
+        ShuffleItems = {0, 1};
+      }
+    }
+    break;
+  }
+  case Instruction::Select:
+    ShuffleItems = {1, 2};
+    break;
+  case Instruction::Add:
+  case Instruction::Sub:
+  case Instruction::Mul:
+  case Instruction::Shl:
+  case Instruction::LShr:
+  case Instruction::AShr:
+  case Instruction::And:
+  case Instruction::Or:
+  case Instruction::Xor:
+  case Instruction::FAdd:
+  case Instruction::FSub:
+  case Instruction::FMul:
+  case Instruction::ICmp:
+  case Instruction::FCmp:
+  case Instruction::ShuffleVector:
+    ShuffleItems = {0, 1};
+    break;
+  }
+  if (ShuffleItems != NoneItem) {
+    Modifications.push_back([&Inst, &ShuffleItems]() {
+      Value *Op0 = Inst.getOperand(ShuffleItems.first);
+      Inst.setOperand(ShuffleItems.first, Inst.getOperand(ShuffleItems.second));
+      Inst.setOperand(ShuffleItems.second, Op0);
+    });
   }
 
   auto RS = makeSampler(IB.Rand, Modifications);
@@ -490,6 +534,65 @@ void OperandMutatorStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   if (Inst->getType() != Type::getVoidTy(C))
     // Find a new sink and wire up the results of the operation.
     IB.connectToSink(BB, InstsAfter, Inst);
+}
+
+void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  SmallSet<Instruction *, 8> AliveInsts;
+  // First gather all instructions that can be shuffled. Don't take terminator.
+  for (auto I = BB.getFirstInsertionPt(); &*I != BB.getTerminator(); ++I) {
+    AliveInsts.insert(&*I);
+  }
+  // Then remove these instructions from the block
+  for (Instruction *I : AliveInsts) {
+    I->removeFromParent();
+  }
+
+  // Shuffle these instructions using topological sort.
+  auto getAliveParents = [&AliveInsts](Instruction *I) {
+    SmallSet<Instruction *, 4> Parents;
+    for (Value *O : I->operands()) {
+      Instruction *P = dyn_cast<Instruction>(O);
+      if (AliveInsts.count(P) != 0)
+        Parents.insert(P);
+    }
+    return Parents;
+  };
+  auto getAliveChildren = [&AliveInsts](Instruction *I) {
+    SmallSet<Instruction *, 4> Children;
+    for (Value *U : I->users()) {
+      Instruction *P = dyn_cast<Instruction>(U);
+      if (AliveInsts.count(P) != 0)
+        Children.insert(P);
+    }
+    return Children;
+  };
+  SmallSet<Instruction *, 8> Roots;
+  SmallVector<Instruction *, 8> Insts;
+  for (Instruction *I : AliveInsts) {
+    if (getAliveParents(I).size() == 0)
+      Roots.insert(I);
+  }
+  // Topological sort by randomly selecting a node without a parent, or root.
+  while (Roots.size() != 0) {
+    auto RS = makeSampler<Instruction *>(IB.Rand);
+    for (Instruction *Root : Roots)
+      RS.sample(Root, 1);
+    Instruction *Root = RS.getSelection();
+    Roots.erase(Root);
+    AliveInsts.erase(Root);
+    Insts.push_back(Root);
+    for (Instruction *Child : getAliveChildren(Root)) {
+      if (getAliveParents(Child).size() == 0) {
+        Roots.insert(Child);
+      }
+    }
+  }
+
+  // Then put instructions back.
+  Instruction *Terminator = BB.getTerminator();
+  for (Instruction *I : Insts) {
+    I->insertBefore(Terminator);
+  }
 }
 
 std::unique_ptr<Module> llvm::parseModule(const uint8_t *Data, uint64_t Size,
