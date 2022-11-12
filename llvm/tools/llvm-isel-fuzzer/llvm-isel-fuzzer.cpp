@@ -45,20 +45,45 @@ static cl::opt<char>
              cl::Prefix, cl::init(' '));
 
 static cl::opt<std::string>
-TargetTriple("mtriple", cl::desc("Override target triple for module"));
+    TargetTriple("mtriple", cl::desc("Override target triple for module"));
 
 static std::unique_ptr<TargetMachine> TM;
 static std::unique_ptr<IRMutator> Mutator;
 
+void InsertVecGetter(std::vector<TypeGetter> &Types,
+                     std::vector<TypeGetter> EleTyGetters,
+                     std::vector<int> lengths) {
+  for (auto EleTyGetter : EleTyGetters) {
+    for (int length : lengths) {
+      Types.push_back([EleTyGetter, length](LLVMContext &C) {
+        return VectorType::get(EleTyGetter(C), length, false);
+      });
+    }
+  }
+}
+
 std::unique_ptr<IRMutator> createISelMutator() {
-  std::vector<TypeGetter> Types{
-      Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty, Type::getInt32Ty,
-      Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy};
+  std::vector<TypeGetter> Types = {
+      Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty, Type::getHalfTy,
+      Type::getInt32Ty, Type::getFloatTy, Type::getInt64Ty, Type::getDoubleTy,
+  };
+  InsertVecGetter(Types, {Type::getInt1Ty}, {32, 64, 256});
+  InsertVecGetter(Types, {Type::getInt8Ty}, {6, 8, 16, 32});
+  InsertVecGetter(Types, {Type::getInt16Ty, Type::getHalfTy}, {4, 8, 16});
+  InsertVecGetter(Types, {Type::getInt32Ty, Type::getFloatTy}, {2, 4, 8});
+  InsertVecGetter(Types, {Type::Type::getInt64Ty, Type::getDoubleTy}, {2, 4});
 
   std::vector<std::unique_ptr<IRMutationStrategy>> Strategies;
-  Strategies.emplace_back(
-      new InjectorIRStrategy(InjectorIRStrategy::getDefaultOps()));
-  Strategies.emplace_back(new InstDeleterIRStrategy());
+  Strategies.push_back(std::make_unique<InjectorIRStrategy>(
+      InjectorIRStrategy::getDefaultOps()));
+  Strategies.push_back(std::make_unique<InstDeleterIRStrategy>());
+  Strategies.push_back(std::make_unique<InstModificationIRStrategy>());
+  Strategies.push_back(std::make_unique<FunctionIRStrategy>());
+  Strategies.push_back(std::make_unique<CFGIRStrategy>());
+  Strategies.push_back(std::make_unique<InstDeleterIRStrategy>());
+  Strategies.push_back(std::make_unique<InsertPHIStrategy>());
+  Strategies.push_back(std::make_unique<OperandMutatorStrategy>());
+  Strategies.push_back(std::make_unique<ShuffleBlockStrategy>());
 
   return std::make_unique<IRMutator>(std::move(Types), std::move(Strategies));
 }
@@ -149,11 +174,20 @@ extern "C" LLVM_ATTRIBUTE_USED int LLVMFuzzerInitialize(int *argc,
   default:
     errs() << argv[0] << ": invalid optimization level.\n";
     return 1;
-  case ' ': break;
-  case '0': OLvl = CodeGenOpt::None; break;
-  case '1': OLvl = CodeGenOpt::Less; break;
-  case '2': OLvl = CodeGenOpt::Default; break;
-  case '3': OLvl = CodeGenOpt::Aggressive; break;
+  case ' ':
+    break;
+  case '0':
+    OLvl = CodeGenOpt::None;
+    break;
+  case '1':
+    OLvl = CodeGenOpt::Less;
+    break;
+  case '2':
+    OLvl = CodeGenOpt::Default;
+    break;
+  case '3':
+    OLvl = CodeGenOpt::Aggressive;
+    break;
   }
 
   TargetOptions Options = codegen::InitTargetOptionsFromCodeGenFlags(TheTriple);

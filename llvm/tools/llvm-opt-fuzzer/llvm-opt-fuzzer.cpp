@@ -40,18 +40,40 @@ static cl::opt<std::string> PassPipeline(
 static std::unique_ptr<IRMutator> Mutator;
 static std::unique_ptr<TargetMachine> TM;
 
+void InsertVecGetter(std::vector<TypeGetter> &Types,
+                     std::vector<TypeGetter> EleTyGetters,
+                     std::vector<int> lengths) {
+  for (auto EleTyGetter : EleTyGetters) {
+    for (int length : lengths) {
+      Types.push_back([EleTyGetter, length](LLVMContext &C) {
+        return VectorType::get(EleTyGetter(C), length, false);
+      });
+    }
+  }
+}
+
 std::unique_ptr<IRMutator> createOptMutator() {
-  std::vector<TypeGetter> Types{
-      Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty, Type::getInt32Ty,
-      Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy};
+  std::vector<TypeGetter> Types = {
+      Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty, Type::getHalfTy,
+      Type::getInt32Ty, Type::getFloatTy, Type::getInt64Ty, Type::getDoubleTy,
+  };
+  InsertVecGetter(Types, {Type::getInt1Ty}, {32, 64, 256});
+  InsertVecGetter(Types, {Type::getInt8Ty}, {6, 8, 16, 32});
+  InsertVecGetter(Types, {Type::getInt16Ty, Type::getHalfTy}, {4, 8, 16});
+  InsertVecGetter(Types, {Type::getInt32Ty, Type::getFloatTy}, {2, 4, 8});
+  InsertVecGetter(Types, {Type::Type::getInt64Ty, Type::getDoubleTy}, {2, 4});
 
   std::vector<std::unique_ptr<IRMutationStrategy>> Strategies;
-  Strategies.push_back(
-      std::make_unique<InjectorIRStrategy>(
-          InjectorIRStrategy::getDefaultOps()));
-  Strategies.push_back(
-      std::make_unique<InstDeleterIRStrategy>());
+  Strategies.push_back(std::make_unique<InjectorIRStrategy>(
+      InjectorIRStrategy::getDefaultOps()));
+  Strategies.push_back(std::make_unique<InstDeleterIRStrategy>());
   Strategies.push_back(std::make_unique<InstModificationIRStrategy>());
+  Strategies.push_back(std::make_unique<FunctionIRStrategy>());
+  Strategies.push_back(std::make_unique<CFGIRStrategy>());
+  Strategies.push_back(std::make_unique<InstDeleterIRStrategy>());
+  Strategies.push_back(std::make_unique<InsertPHIStrategy>());
+  Strategies.push_back(std::make_unique<OperandMutatorStrategy>());
+  Strategies.push_back(std::make_unique<ShuffleBlockStrategy>());
 
   return std::make_unique<IRMutator>(std::move(Types), std::move(Strategies));
 }
@@ -60,7 +82,7 @@ extern "C" LLVM_ATTRIBUTE_USED size_t LLVMFuzzerCustomMutator(
     uint8_t *Data, size_t Size, size_t MaxSize, unsigned int Seed) {
 
   assert(Mutator &&
-      "IR mutator should have been created during fuzzer initialization");
+         "IR mutator should have been created during fuzzer initialization");
 
   LLVMContext Context;
   auto M = parseAndVerify(Data, Size, Context);
@@ -79,7 +101,7 @@ extern "C" LLVM_ATTRIBUTE_USED size_t LLVMFuzzerCustomMutator(
     // Avoid adding incorrect test cases to the corpus.
     return 0;
   }
-  
+
   std::string Buf;
   {
     raw_string_ostream OS(Buf);
@@ -87,15 +109,15 @@ extern "C" LLVM_ATTRIBUTE_USED size_t LLVMFuzzerCustomMutator(
   }
   if (Buf.size() > MaxSize)
     return 0;
-  
+
   // There are some invariants which are not checked by the verifier in favor
   // of having them checked by the parser. They may be considered as bugs in the
   // verifier and should be fixed there. However until all of those are covered
   // we want to check for them explicitly. Otherwise we will add incorrect input
-  // to the corpus and this is going to confuse the fuzzer which will start 
+  // to the corpus and this is going to confuse the fuzzer which will start
   // exploration of the bitcode reader error handling code.
-  auto NewM = parseAndVerify(
-      reinterpret_cast<const uint8_t*>(Buf.data()), Buf.size(), Context);
+  auto NewM = parseAndVerify(reinterpret_cast<const uint8_t *>(Buf.data()),
+                             Buf.size(), Context);
   if (!NewM) {
     errs() << "mutator failed to re-read the module\n";
 #ifndef NDEBUG
@@ -176,8 +198,8 @@ static void handleLLVMFatalError(void *, const char *Message, bool) {
   abort();
 }
 
-extern "C" LLVM_ATTRIBUTE_USED int LLVMFuzzerInitialize(
-    int *argc, char ***argv) {
+extern "C" LLVM_ATTRIBUTE_USED int LLVMFuzzerInitialize(int *argc,
+                                                        char ***argv) {
   EnableDebugBuffering = true;
 
   // Make sure we print the summary and the current unit when LLVM errors out.
