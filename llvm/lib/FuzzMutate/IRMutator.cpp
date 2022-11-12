@@ -53,10 +53,17 @@ void IRMutationStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 
 void IRMutator::mutateModule(Module &M, int Seed, uint64_t CurSize,
                              uint64_t MaxSize) {
-  std::vector<Type *> Types;
+  SmallSet<Type *, 16> Types;
   for (const auto &Getter : AllowedTypes)
-    Types.push_back(Getter(M.getContext()));
-  RandomIRBuilder IB(Seed, Types);
+    Types.insert(Getter(M.getContext()));
+  // To be safe we should add ALL types that are already in used into the known
+  // types. However, scan through the Module can be slow, we make the trade off
+  // to only include all known function arguments.
+  for (Function &F : M)
+    for (Argument &Arg : F.args())
+      Types.insert(Arg.getType());
+
+  RandomIRBuilder IB(Seed, SmallVector<Type *, 16>(Types.begin(), Types.end()));
 
   auto RS = makeSampler<IRMutationStrategy *>(IB.Rand);
   for (const auto &Strategy : Strategies)
