@@ -228,4 +228,83 @@ TEST(InstModificationIRStrategyTest, GEP) {
 
   EXPECT_TRUE(FoundInbounds);
 }
+
+TEST(FunctionIRStrategy, Func) {
+  LLVMContext Ctx;
+  const char *Source = "";
+  auto Mutator = createMutator<FunctionIRStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source, Ctx);
+  srand(Seed);
+  for (int i = 0; i < 100; i++) {
+    Mutator->mutateModule(*M, rand(), 0, 1024);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
+
+TEST(CFGIRStrategy, CFG) {
+  LLVMContext Ctx;
+  StringRef Source = "\n\
+      define void @test(i1 %0, i1 %1, i1 %2, i1 %3, i16 %4, i16 %5, i32 %6) {\n\
+        Entry: \n\
+        ret void\n\
+      }";
+  auto Mutator = createMutator<CFGIRStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source.data(), Ctx);
+  srand(Seed);
+  for (int i = 0; i < 100; i++) {
+    Mutator->mutateModule(*M, rand(), Source.size(), Source.size() + 1024);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
+
+TEST(InsertPHIStrategy, PHI) {
+  LLVMContext Ctx;
+  StringRef Source = "\n\
+      define void @test(i1 %0, i1 %1, i1 %2, i1 %3, i16 %4, i16 %5, i32 %6) {\n\
+        Entry: \n\
+        ret void\n\
+      }";
+  auto Mutator = createMutator<InsertPHIStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source.data(), Ctx);
+  srand(Seed);
+  for (int i = 0; i < 100; i++) {
+    Mutator->mutateModule(*M, rand(), Source.size(), Source.size() + 1024);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
+
+TEST(OperandMutatorStrategy, Operand) {
+  LLVMContext Ctx;
+  StringRef Source = "\n\
+      define void @test(i1 %0, i1 %1, i1 %2, i1 %3, i32 %4) { \n\
+        Entry:  \n\
+          %5 = add i32 %4, 100  \n\
+          br i1 %0, label %BB0, label %BB1  \n\
+        BB0:  \n\
+          %6 = add i32 %4, 2  \n\
+          %7 = sub i32 %5, 2  \n\
+          br label %Exit  \n\
+        BB1:  \n\
+          %8 = mul i32 %5, %4 \n\
+          %9 = and i1 %1, %2  \n\
+          br label %Exit  \n\
+        Exit:  \n\
+          ret void  \n\
+      }";
+  auto Mutator = createMutator<OperandMutatorStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source.data(), Ctx);
+  srand(Seed);
+  for (int i = 0; i < 100; i++) {
+    Mutator->mutateModule(*M, rand(), Source.size(), Source.size() + 1024);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
 } // namespace

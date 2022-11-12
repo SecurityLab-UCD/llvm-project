@@ -480,7 +480,7 @@ void OperandMutatorStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   if (Insts.size() < 1)
     return;
 
-  // Choose an insertion point for our new instruction.
+  // Choose an Instruction to mutate.
   uint64_t Idx = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
   Instruction *Inst = Insts[Idx];
 

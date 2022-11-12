@@ -95,6 +95,7 @@ public:
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 };
 
+/// Strategy that deletes instructions when the Module is too large.
 class InstDeleterIRStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
@@ -105,6 +106,7 @@ public:
   void mutate(Instruction &Inst, RandomIRBuilder &IB) override;
 };
 
+/// Strategy that modifies instruction attributes and operands.
 class InstModificationIRStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
@@ -116,6 +118,9 @@ public:
   void mutate(Instruction &Inst, RandomIRBuilder &IB) override;
 };
 
+/// Strategy that generates new function calls and inserts function signatures
+/// to the modules.
+/// If any signatures are present in the module it will be called.
 class FunctionIRStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
@@ -127,6 +132,7 @@ public:
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 };
 
+/// Strategy to split a random block and insert a random CFG in between.
 class CFGIRStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
@@ -140,6 +146,7 @@ public:
                            RandomIRBuilder &IB);
 };
 
+/// Strategy to insert PHI Nodes at the head of each basic block.
 class InsertPHIStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
@@ -151,6 +158,8 @@ public:
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 };
 
+/// Strategy to select a random instruction and add a new sink to it to increate
+/// data dependency.
 class OperandMutatorStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,

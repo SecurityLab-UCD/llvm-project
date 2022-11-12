@@ -213,9 +213,6 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
                                   bool AllowConstant) {
   // Generate some constants to choose from.
   auto RS = makeSampler<Value *>(Rand);
-  if (AllowConstant) {
-    RS.sample(Pred.generate(Srcs, KnownTypes));
-  }
 
   // If we can find a pointer to load from, use it half the time.
   Value *Ptr = findPointer(BB, Insts, Srcs, Pred);
@@ -227,9 +224,15 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
       assert(IP != BB.end() && "guaranteed by the findPointer");
     }
     // For opaque pointers, pick the type independently.
-    Type *AccessTy = Ptr->getType()->isOpaquePointerTy()
-                         ? RS.getSelection()->getType()
-                         : Ptr->getType()->getNonOpaquePointerElementType();
+    Type *AccessTy = nullptr;
+    if (Ptr->getType()->isOpaquePointerTy()) {
+      // Using allowed constants to determine the access type.
+      auto CRS = makeSampler<Value *>(Rand);
+      CRS.sample(Pred.generate(Srcs, KnownTypes));
+      AccessTy = CRS.getSelection()->getType();
+    } else {
+      AccessTy = Ptr->getType()->getNonOpaquePointerElementType();
+    }
     auto *NewLoad = new LoadInst(AccessTy, Ptr, "L", &*IP);
 
     // Only sample this load if it really matches the descriptor
@@ -237,6 +240,10 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
       RS.sample(NewLoad, RS.totalWeight());
     else
       NewLoad->eraseFromParent();
+  }
+
+  if (AllowConstant) {
+    RS.sample(Pred.generate(Srcs, KnownTypes));
   }
 
   // We don't have anything at this point, create a stack memory.
