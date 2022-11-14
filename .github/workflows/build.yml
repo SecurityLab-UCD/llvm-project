@@ -38,3 +38,8 @@ jobs:
         run: |
           cd build-release
           ninja -j $(nproc --all)
+          
+      - name: Check All
+        run: |
+          cd build-release
+          ninja check-all
