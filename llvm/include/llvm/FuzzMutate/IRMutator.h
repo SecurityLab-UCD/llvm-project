@@ -95,6 +95,7 @@ public:
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 };
 
+/// Strategy that deletes instructions when the Module is too large.
 class InstDeleterIRStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
@@ -105,6 +106,7 @@ public:
   void mutate(Instruction &Inst, RandomIRBuilder &IB) override;
 };
 
+/// Strategy that modifies instruction attributes and operands.
 class InstModificationIRStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
