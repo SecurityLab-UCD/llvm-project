@@ -8,6 +8,7 @@
 
 #include "llvm/FuzzMutate/IRMutator.h"
 #include "llvm/ADT/Optional.h"
+#include "llvm/ADT/SmallSet.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Bitcode/BitcodeReader.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
@@ -295,6 +296,65 @@ void InstModificationIRStrategy::mutate(Instruction &Inst,
   auto RS = makeSampler(IB.Rand, Modifications);
   if (RS)
     RS.getSelection()();
+}
+
+void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  SmallSet<Instruction *, 8> AliveInsts;
+  // First gather all instructions that can be shuffled. Don't take terminator.
+  for (auto I = BB.getFirstInsertionPt(); &*I != BB.getTerminator(); ++I) {
+    AliveInsts.insert(&*I);
+  }
+  // Then remove these instructions from the block
+  for (Instruction *I : AliveInsts) {
+    I->removeFromParent();
+  }
+
+  // Shuffle these instructions using topological sort.
+  auto getAliveParents = [&AliveInsts](Instruction *I) {
+    SmallSet<Instruction *, 4> Parents;
+    for (Value *O : I->operands()) {
+      Instruction *P = dyn_cast<Instruction>(O);
+      if (AliveInsts.count(P) != 0)
+        Parents.insert(P);
+    }
+    return Parents;
+  };
+  auto getAliveChildren = [&AliveInsts](Instruction *I) {
+    SmallSet<Instruction *, 4> Children;
+    for (Value *U : I->users()) {
+      Instruction *P = dyn_cast<Instruction>(U);
+      if (AliveInsts.count(P) != 0)
+        Children.insert(P);
+    }
+    return Children;
+  };
+  SmallSet<Instruction *, 8> Roots;
+  SmallVector<Instruction *, 8> Insts;
+  for (Instruction *I : AliveInsts) {
+    if (getAliveParents(I).size() == 0)
+      Roots.insert(I);
+  }
+  // Topological sort by randomly selecting a node without a parent, or root.
+  while (Roots.size() != 0) {
+    auto RS = makeSampler<Instruction *>(IB.Rand);
+    for (Instruction *Root : Roots)
+      RS.sample(Root, 1);
+    Instruction *Root = RS.getSelection();
+    Roots.erase(Root);
+    AliveInsts.erase(Root);
+    Insts.push_back(Root);
+    for (Instruction *Child : getAliveChildren(Root)) {
+      if (getAliveParents(Child).size() == 0) {
+        Roots.insert(Child);
+      }
+    }
+  }
+
+  // Then put instructions back.
+  Instruction *Terminator = BB.getTerminator();
+  for (Instruction *I : Insts) {
+    I->insertBefore(Terminator);
+  }
 }
 
 std::unique_ptr<Module> llvm::parseModule(const uint8_t *Data, size_t Size,
