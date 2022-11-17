@@ -218,8 +218,8 @@ void InstModificationIRStrategy::mutate(Instruction &Inst,
   case Instruction::Mul:
   case Instruction::Sub:
   case Instruction::Shl:
-    Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(true); }),
-        Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(false); });
+    Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(true); });
+    Modifications.push_back([&Inst]() { Inst.setHasNoSignedWrap(false); });
     Modifications.push_back([&Inst]() { Inst.setHasNoUnsignedWrap(true); });
     Modifications.push_back([&Inst]() { Inst.setHasNoUnsignedWrap(false); });
 
