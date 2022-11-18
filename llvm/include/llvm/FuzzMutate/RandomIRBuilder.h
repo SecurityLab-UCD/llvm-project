@@ -22,6 +22,8 @@ class BasicBlock;
 class Instruction;
 class LLVMContext;
 class Type;
+class Module;
+class Function;
 class Value;
 namespace fuzzerop {
 class SourcePred;
@@ -65,6 +67,12 @@ struct RandomIRBuilder {
                    fuzzerop::SourcePred Pred);
   /// Randomlly select a type from allowed types
   Type *randomType();
+  Function *createFunctionDeclaration(Module &M, uint64_t ArgNum);
+  Function *createFunctionDeclaration(Module &M, uint64_t MinArgNum,
+                                      uint64_t MaxArgNum);
+  Function *createFunctionDefinition(Module &M, uint64_t ArgNum);
+  Function *createFunctionDefinition(Module &M, uint64_t MinArgNum,
+                                     uint64_t MaxArgNum);
 };
 
 } // end llvm namespace
