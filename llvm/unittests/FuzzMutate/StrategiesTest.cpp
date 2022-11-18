@@ -319,4 +319,40 @@ TEST(InstModificationIRStrategyTest, DidntShuffleFRem) {
       }";
   VerfyDivDidntShuffle(Source);
 }
+
+TEST(CFGIRStrategy, CFG) {
+  LLVMContext Ctx;
+  StringRef Source = "\n\
+      define void @test(i1 %0, i1 %1, i1 %2, i1 %3, i16 %4, i16 %5, i32 %6) {\n\
+        Entry: \n\
+        ret void\n\
+      }";
+  auto Mutator = createMutator<CFGIRStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source.data(), Ctx);
+  srand(Seed);
+  for (int i = 0; i < 100; i++) {
+    Mutator->mutateModule(*M, rand(), Source.size(), Source.size() + 1024);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
+
+TEST(InsertPHIStrategy, PHI) {
+  LLVMContext Ctx;
+  StringRef Source = "\n\
+      define void @test(i1 %0, i1 %1, i1 %2, i1 %3, i16 %4, i16 %5, i32 %6) {\n\
+        Entry: \n\
+        ret void\n\
+      }";
+  auto Mutator = createMutator<InsertPHIStrategy>();
+  ASSERT_TRUE(Mutator);
+
+  auto M = parseAssembly(Source.data(), Ctx);
+  srand(Seed);
+  for (int i = 0; i < 100; i++) {
+    Mutator->mutateModule(*M, rand(), Source.size(), Source.size() + 1024);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
 }

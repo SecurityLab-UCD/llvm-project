@@ -118,6 +118,34 @@ public:
   void mutate(Instruction &Inst, RandomIRBuilder &IB) override;
 };
 
+/// Strategy to split a random block and insert a random CFG in between.
+class CFGIRStrategy : public IRMutationStrategy {
+public:
+  uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
+                     uint64_t CurrentWeight) override {
+    return 5;
+  }
+
+  using IRMutationStrategy::mutate;
+  void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
+
+private:
+  void connectBlocksToSink(ArrayRef<BasicBlock *> Blocks, BasicBlock *Sink,
+                           RandomIRBuilder &IB);
+};
+
+/// Strategy to insert PHI Nodes at the head of each basic block.
+class InsertPHIStrategy : public IRMutationStrategy {
+public:
+  uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
+                     uint64_t CurrentWeight) override {
+    return 2;
+  }
+
+  using IRMutationStrategy::mutate;
+  void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
+};
+
 /// Fuzzer friendly interface for the llvm bitcode parser.
 ///
 /// \param Data Bitcode we are going to parse

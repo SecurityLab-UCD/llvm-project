@@ -26,7 +26,8 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
 Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
                                            ArrayRef<Instruction *> Insts,
                                            ArrayRef<Value *> Srcs,
-                                           SourcePred Pred) {
+                                           SourcePred Pred,
+                                           bool AllowConstant) {
   auto MatchesPred = [&Srcs, &Pred](Instruction *Inst) {
     return Pred.matches(Srcs, Inst);
   };
@@ -35,14 +36,16 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
   RS.sample(nullptr, /*Weight=*/1);
   if (Instruction *Src = RS.getSelection())
     return Src;
-  return newSource(BB, Insts, Srcs, Pred);
+  return newSource(BB, Insts, Srcs, Pred, AllowConstant);
 }
 
 Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
-                                  ArrayRef<Value *> Srcs, SourcePred Pred) {
+                                  ArrayRef<Value *> Srcs, SourcePred Pred,
+                                  bool AllowConstant) {
   // Generate some constants to choose from.
   auto RS = makeSampler<Value *>(Rand);
-  RS.sample(Pred.generate(Srcs, KnownTypes));
+  if (AllowConstant)
+    RS.sample(Pred.generate(Srcs, KnownTypes));
 
   // If we can find a pointer to load from, use it half the time.
   Value *Ptr = findPointer(BB, Insts, Srcs, Pred);
@@ -54,9 +57,15 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
       assert(IP != BB.end() && "guaranteed by the findPointer");
     }
     // For opaque pointers, pick the type independently.
-    Type *AccessTy = Ptr->getType()->isOpaquePointerTy()
-                         ? RS.getSelection()->getType()
-                         : Ptr->getType()->getNonOpaquePointerElementType();
+    Type *AccessTy = nullptr;
+    if (Ptr->getType()->isOpaquePointerTy()) {
+      // Using allowed constants to determine the access type.
+      auto CRS = makeSampler<Value *>(Rand);
+      CRS.sample(Pred.generate(Srcs, KnownTypes));
+      AccessTy = CRS.getSelection()->getType();
+    } else {
+      AccessTy = Ptr->getType()->getNonOpaquePointerElementType();
+    }
     auto *NewLoad = new LoadInst(AccessTy, Ptr, "L", &*IP);
 
     // Only sample this load if it really matches the descriptor
@@ -66,7 +75,27 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
       NewLoad->eraseFromParent();
   }
 
-  assert(!RS.isEmpty() && "Failed to generate sources");
+  // We don't have anything at this point, create a stack memory.
+  if (RS.isEmpty()) {
+    // Randomly select a type that is allowed here.
+    auto TRS = makeSampler<Value *>(Rand);
+    TRS.sample(Pred.generate(Srcs, KnownTypes));
+    Value *V = TRS.getSelection();
+    Type *Ty = V->getType();
+    // Generate a stack alloca.
+    Function *F = BB.getParent();
+    BasicBlock *EntryBB = &F->getEntryBlock();
+    /// TODO: For all Allocas, maybe allocate an array by setting `ArrLen`
+    AllocaInst *Alloca = new AllocaInst(Ty, 0, "A", EntryBB->getTerminator());
+    LoadInst *Load = nullptr;
+    if (BB.getTerminator()) {
+      Load = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", BB.getTerminator());
+    } else {
+      Load = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", &BB);
+    }
+    RS.sample(Load, 1);
+  }
+
   return RS.getSelection();
 }
 
@@ -159,4 +188,9 @@ Value *RandomIRBuilder::findPointer(BasicBlock &BB,
   if (auto RS = makeSampler(Rand, make_filter_range(Insts, IsMatchingPtr)))
     return RS.getSelection();
   return nullptr;
+}
+
+Type *RandomIRBuilder::randomType() {
+  uint64_t TyIdx = uniform<uint64_t>(Rand, 0, KnownTypes.size() - 1);
+  return KnownTypes[TyIdx];
 }
