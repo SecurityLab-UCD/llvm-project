@@ -497,21 +497,26 @@ void CFGIRStrategy::connectBlocksToSink(ArrayRef<BasicBlock *> Blocks,
 
 void InsertPHIStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   // Can't insert PHI node to entry node.
-  if (&BB == &BB.getParent()->getEntryBlock()) {
+  if (&BB == &BB.getParent()->getEntryBlock())
     return;
-  }
   Type *Ty = IB.randomType();
   PHINode *PHI = PHINode::Create(Ty, llvm::pred_size(&BB), "", &BB.front());
 
-  SmallVector<Value *, 4> Srcs;
-  for (BasicBlock *Prev : predecessors(&BB)) {
-    SmallVector<Instruction *, 32> Insts;
-    for (auto I = Prev->begin(); I != Prev->end(); ++I)
-      Insts.push_back(&*I);
-    Value *Src =
-        IB.findOrCreateSource(*Prev, Insts, Srcs, fuzzerop::onlyType(Ty));
-    Srcs.push_back(Src);
-    PHI->addIncoming(Src, Prev);
+  // Use a map to make sure the same incoming basic block has the same value.
+  DenseMap<BasicBlock *, Value *> IncomingValues;
+  for (BasicBlock *Pred : predecessors(&BB)) {
+    Value *Src = IncomingValues[Pred];
+    // If `Pred` is not in the map yet, we'll get a nullptr.
+    if (!Src) {
+      SmallVector<Instruction *, 32> Insts;
+      for (auto I = Pred->begin(); I != Pred->end(); ++I)
+        Insts.push_back(&*I);
+      // There is no need to inform IB what previously used values are if we are
+      // using `onlyType`
+      Src = IB.findOrCreateSource(*Pred, Insts, {}, fuzzerop::onlyType(Ty));
+      IncomingValues[Pred] = Src;
+    }
+    PHI->addIncoming(Src, Pred);
   }
   SmallVector<Instruction *, 32> InstsAfter;
   for (auto I = BB.getFirstInsertionPt(), E = BB.end(); I != E; ++I)
