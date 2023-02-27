@@ -15,6 +15,7 @@
 #include "llvm/FuzzMutate/Operations.h"
 #include "llvm/FuzzMutate/Random.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -233,6 +234,40 @@ TEST(RandomIRBuilderTest, Invokes) {
   }
 }
 
+TEST(RandomIRBuilderTest, FirstClassTypes) {
+  // Check that we never insert new source as a load from non first class
+  // or unsized type.
+
+  LLVMContext Ctx;
+  const char *SourceCode = "%Opaque = type opaque\n"
+                           "define void @test(i8* %ptr) {\n"
+                           "entry:\n"
+                           "  %tmp = bitcast i8* %ptr to i32* (i32*)*\n"
+                           "  %tmp1 = bitcast i8* %ptr to %Opaque*\n"
+                           "  ret void\n"
+                           "}";
+  auto M = parseAssembly(SourceCode, Ctx);
+
+  std::vector<Type *> Types = {Type::getInt8Ty(Ctx)};
+  RandomIRBuilder IB(Seed, Types);
+
+  Function &F = *M->getFunction("test");
+  BasicBlock &BB = *F.begin();
+  // Non first class type
+  Instruction *FuncPtr = &*BB.begin();
+  // Unsized type
+  Instruction *OpaquePtr = &*std::next(BB.begin());
+
+  for (int i = 0; i < 10; ++i) {
+    Value *V = IB.findOrCreateSource(BB, {FuncPtr, OpaquePtr});
+    // To make sure we are allowed to load from a global variable
+    if (LoadInst *LI = dyn_cast<LoadInst>(V)) {
+      EXPECT_NE(LI->getOperand(0), FuncPtr);
+      EXPECT_NE(LI->getOperand(0), OpaquePtr);
+    }
+  }
+}
+
 TEST(RandomIRBuilderTest, SwiftError) {
   // Check that we never pick swifterror value as a source for operation
   // other than load, store and call.
@@ -308,4 +343,165 @@ TEST(RandomIRBuilderTest, dontConnectToSwitch) {
   }
 }
 
+TEST(RandomIRBuilderTest, createStackMemory) {
+  LLVMContext Ctx;
+  const char *SourceCode = "\n\
+    define void @test(i1 %C1, i1 %C2, i32 %I, i32 %J) { \n\
+    Entry:  \n\
+      ret void \n\
+    }";
+  Type *Int32Ty = Type::getInt32Ty(Ctx);
+  Constant *Int32_1 = ConstantInt::get(Int32Ty, APInt(32, 1));
+  Type *Int64Ty = Type::getInt64Ty(Ctx);
+  Constant *Int64_42 = ConstantInt::get(Int64Ty, APInt(64, 42));
+  Type *DoubleTy = Type::getDoubleTy(Ctx);
+  Constant *Double_0 =
+      ConstantFP::get(Ctx, APFloat::getZero(DoubleTy->getFltSemantics()));
+  std::vector<Type *> Types = {
+      Int32Ty,
+      Int64Ty,
+      DoubleTy,
+      PointerType::get(Ctx, 0),
+      PointerType::get(Int32Ty, 0),
+      VectorType::get(Int32Ty, 4, false),
+      StructType::create({Int32Ty, DoubleTy, Int64Ty}),
+      ArrayType::get(Int64Ty, 4),
+  };
+  std::vector<Value *> Inits = {
+      Int32_1,
+      Int64_42,
+      Double_0,
+      UndefValue::get(Types[3]),
+      UndefValue::get(Types[4]),
+      ConstantVector::get({Int32_1, Int32_1, Int32_1, Int32_1}),
+      ConstantStruct::get(cast<StructType>(Types[6]),
+                          {Int32_1, Double_0, Int64_42}),
+      ConstantArray::get(cast<ArrayType>(Types[7]),
+                         {Int64_42, Int64_42, Int64_42, Int64_42}),
+  };
+  ASSERT_EQ(Types.size(), Inits.size());
+  unsigned NumTests = Types.size();
+  RandomIRBuilder IB(Seed, Types);
+  auto CreateStackMemoryAndVerify = [&Ctx, &SourceCode, &IB](Type *Ty,
+                                                             Value *Init) {
+    std::unique_ptr<Module> M = parseAssembly(SourceCode, Ctx);
+    Function &F = *M->getFunction("test");
+    // Create stack memory without initializer.
+    IB.createStackMemory(&F, Ty, nullptr);
+    // Create stack memory with initializer.
+    IB.createStackMemory(&F, Ty, Init);
+    EXPECT_FALSE(verifyModule(*M, &errs()));
+  };
+  for (unsigned i = 0; i < NumTests; i++) {
+    CreateStackMemoryAndVerify(Types[i], Inits[i]);
+  }
+}
+
+TEST(RandomIRBuilderTest, findOrCreateGlobalVariable) {
+  LLVMContext Ctx;
+  const char *SourceCode = "\n\
+    @G = global i32 1 \n\
+  ";
+  std::vector<Type *> Types = {Type::getInt32Ty(Ctx), Type::getInt64Ty(Ctx)};
+  RandomIRBuilder IB(Seed, Types);
+  std::unique_ptr<Module> M1 = parseAssembly(SourceCode, Ctx);
+  IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[0]));
+  ASSERT_FALSE(verifyModule(*M1, &errs()));
+  unsigned NumGV = M1->getNumNamedValues();
+  auto [GV1, DidCreate1] =
+      IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[0]));
+  ASSERT_FALSE(verifyModule(*M1, &errs()));
+  ASSERT_EQ(M1->getNumNamedValues(), NumGV + DidCreate1);
+
+  std::unique_ptr<Module> M2 = parseAssembly(SourceCode, Ctx);
+  auto [GV2, DidCreate2] =
+      IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[1]));
+  ASSERT_FALSE(verifyModule(*M2, &errs()));
+  ASSERT_TRUE(DidCreate2);
+}
+
+/// Checks if the source and sink we find for an instruction has correct
+/// domination relation.
+TEST(RandomIRBuilderTest, findSourceAndSink) {
+  const char *Source = "\n\
+        define i64 @test(i1 %0, i1 %1, i1 %2, i32 %3, i32 %4) { \n\
+        Entry:  \n\
+          %A = alloca i32, i32 8, align 4 \n\
+          %E.1 = and i32 %3, %4 \n\
+          %E.2 = add i32 %4 , 1 \n\
+          %A.GEP.1 = getelementptr i32, ptr %A, i32 0 \n\
+          %A.GEP.2 = getelementptr i32, ptr %A.GEP.1, i32 1 \n\
+          %L.2 = load i32, ptr %A.GEP.2 \n\
+          %L.1 = load i32, ptr %A.GEP.1 \n\
+          %E.3 = sub i32 %E.2, %L.1 \n\
+          %Cond.1 = icmp eq i32 %E.3, %E.2 \n\
+          %Cond.2 = and i1 %0, %1 \n\
+          %Cond = or i1 %Cond.1, %Cond.2 \n\
+          br i1 %Cond, label %BB0, label %BB1  \n\
+        BB0:  \n\
+          %Add = add i32 %L.1, %L.2 \n\
+          %Sub = sub i32 %L.1, %L.2 \n\
+          %Sub.1 = sub i32 %Sub, 12 \n\
+          %Cast.1 = bitcast i32 %4 to float \n\
+          %Add.2 = add i32 %3, 1 \n\
+          %Cast.2 = bitcast i32 %Add.2 to float \n\
+          %FAdd = fadd float %Cast.1, %Cast.2 \n\
+          %Add.3 = add i32 %L.2, %L.1 \n\
+          %Cast.3 = bitcast float %FAdd to i32 \n\
+          %Sub.2 = sub i32 %Cast.3, %Sub.1 \n\
+          %SExt = sext i32 %Cast.3 to i64 \n\
+          %A.GEP.3 = getelementptr i64, ptr %A, i32 1 \n\
+          store i64 %SExt, ptr %A.GEP.3 \n\
+          br label %Exit  \n\
+        BB1:  \n\
+          %PHI.1 = phi i32 [0, %Entry] \n\
+          %SExt.1 = sext i1 %Cond.2 to i32 \n\
+          %SExt.2 = sext i1 %Cond.1 to i32 \n\
+          %E.164 = zext i32 %E.1 to i64 \n\
+          %E.264 = zext i32 %E.2 to i64 \n\
+          %E.1264 = mul i64 %E.164, %E.264 \n\
+          %E.12 = trunc i64 %E.1264 to i32 \n\
+          %A.GEP.4 = getelementptr i32, ptr %A, i32 2 \n\
+          %A.GEP.5 = getelementptr i32, ptr %A.GEP.4, i32 2 \n\
+          store i32 %E.12, ptr %A.GEP.5 \n\
+          br label %Exit  \n\
+        Exit:  \n\
+          %PHI.2 = phi i32 [%Add, %BB0], [%E.3, %BB1] \n\
+          %PHI.3 = phi i64 [%SExt, %BB0], [%E.1264, %BB1] \n\
+          %ZExt = zext i32 %PHI.2 to i64 \n\
+          %Add.5 = add i64 %PHI.3, 3 \n\
+          ret i64 %Add.5  \n\
+      }";
+  LLVMContext Ctx;
+  std::vector<Type *> Types = {Type::getInt1Ty(Ctx), Type::getInt32Ty(Ctx),
+                               Type::getInt64Ty(Ctx)};
+  std::mt19937 mt(Seed);
+  std::uniform_int_distribution<int> RandInt(INT_MIN, INT_MAX);
+
+  // Get a random instruction, try to find source and sink, make sure it is
+  // dominated.
+  for (int i = 0; i < 100; i++) {
+    RandomIRBuilder IB(RandInt(mt), Types);
+    std::unique_ptr<Module> M = parseAssembly(Source, Ctx);
+    Function &F = *M->getFunction("test");
+    DominatorTree DT(F);
+    BasicBlock *BB = makeSampler(IB.Rand, make_pointer_range(F)).getSelection();
+    SmallVector<Instruction *, 32> Insts;
+    for (auto I = BB->getFirstInsertionPt(), E = BB->end(); I != E; ++I)
+      Insts.push_back(&*I);
+    // Choose an insertion point for our new instruction.
+    size_t IP = uniform<size_t>(IB.Rand, 1, Insts.size() - 2);
+
+    auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
+    auto InstsAfter = makeArrayRef(Insts).slice(IP);
+    Value *Src = IB.findOrCreateSource(
+        *BB, InstsBefore, {}, fuzzerop::onlyType(Types[i % Types.size()]));
+    ASSERT_TRUE(DT.dominates(Src, Insts[IP + 1]));
+    Instruction *Sink = IB.connectToSink(*BB, InstsAfter, Insts[IP - 1]);
+    if (!DT.dominates(Insts[IP - 1], Sink)) {
+      errs() << *Insts[IP - 1] << "\n" << *Sink << "\n ";
+    }
+    ASSERT_TRUE(DT.dominates(Insts[IP - 1], Sink));
+  }
+}
 } // namespace
