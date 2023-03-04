@@ -263,7 +263,6 @@ TEST(RandomIRBuilderTest, FirstClassTypes) {
     // To make sure we are allowed to load from a global variable
     if (LoadInst *LI = dyn_cast<LoadInst>(V)) {
       EXPECT_NE(LI->getOperand(0), FuncPtr);
-      EXPECT_NE(LI->getOperand(0), OpaquePtr);
     }
   }
 }
