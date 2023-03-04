@@ -25,6 +25,8 @@ class GlobalVariable;
 class Instruction;
 class LLVMContext;
 class Type;
+class Module;
+class Function;
 class Value;
 class Module;
 
@@ -35,11 +37,19 @@ class SourcePred;
 using RandomEngine = std::mt19937;
 
 struct RandomIRBuilder {
+
   RandomEngine Rand;
   SmallVector<Type *, 16> KnownTypes;
 
-  RandomIRBuilder(int Seed, ArrayRef<Type *> AllowedTypes)
-      : Rand(Seed), KnownTypes(AllowedTypes.begin(), AllowedTypes.end()) {}
+  uint64_t MinNumArgs = 0;
+  uint64_t MaxNumArgs = 5;
+  uint64_t MinNumFunctions = 1;
+
+  RandomIRBuilder(int Seed, ArrayRef<Type *> AllowedTypes, uint64_t MinArgs = 0,
+                  uint64_t MaxArgs = 5, uint64_t MinFunctions = 1)
+      : Rand(Seed), KnownTypes(AllowedTypes.begin(), AllowedTypes.end()),
+        MinNumArgs(MinArgs), MaxNumArgs(MaxArgs),
+        MinNumFunctions(MinFunctions) {}
 
   // TODO: Try to make this a bit less of a random mishmash of functions.
 
@@ -98,6 +108,10 @@ struct RandomIRBuilder {
                    fuzzerop::SourcePred Pred);
   /// Return a uniformly choosen type from \c AllowedTypes
   Type *randomType();
+  Function *createFunctionDeclaration(Module &M, uint64_t ArgNum);
+  Function *createFunctionDeclaration(Module &M);
+  Function *createFunctionDefinition(Module &M, uint64_t ArgNum);
+  Function *createFunctionDefinition(Module &M);
 };
 
 } // namespace llvm

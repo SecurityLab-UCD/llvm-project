@@ -31,26 +31,19 @@
 
 using namespace llvm;
 
-static void createEmptyFunction(Module &M) {
-  // TODO: Some arguments and a return value would probably be more interesting.
-  LLVMContext &Context = M.getContext();
-  Function *F = Function::Create(FunctionType::get(Type::getVoidTy(Context), {},
-                                                   /*isVarArg=*/false),
-                                 GlobalValue::ExternalLinkage, "f", &M);
-  BasicBlock *BB = BasicBlock::Create(Context, "BB", F);
-  ReturnInst::Create(Context, BB);
-}
-
 void IRMutationStrategy::mutate(Module &M, RandomIRBuilder &IB) {
   auto RS = makeSampler<Function *>(IB.Rand);
   for (Function &F : M)
     if (!F.isDeclaration())
       RS.sample(&F, /*Weight=*/1);
 
-  if (RS.isEmpty())
-    createEmptyFunction(M);
-  else
-    mutate(*RS.getSelection(), IB);
+  /// TODO: Parameterize the following.
+  const uint64_t MinNumFunctions = 1;
+  while (RS.totalWeight() < IB.MinNumFunctions) {
+    Function *F = IB.createFunctionDefinition(M);
+    RS.sample(F, /*Weight=*/1);
+  }
+  mutate(*RS.getSelection(), IB);
 }
 
 void IRMutationStrategy::mutate(Function &F, RandomIRBuilder &IB) {
@@ -335,6 +328,61 @@ void InstModificationIRStrategy::mutate(Instruction &Inst,
   auto RS = makeSampler(IB.Rand, Modifications);
   if (RS)
     RS.getSelection()();
+}
+
+void FunctionIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  Module *M = BB.getParent()->getParent();
+  // If nullptr is selected, we will create a new function declaration.
+  SmallVector<Function *, 32> Functions({nullptr});
+  for (Function &F : M->functions()) {
+    Functions.push_back(&F);
+  }
+
+  auto RS = makeSampler(IB.Rand, Functions);
+  Function *F = RS.getSelection();
+  if (!F) {
+    F = IB.createFunctionDeclaration(*M);
+  }
+
+  FunctionType *FTy = F->getFunctionType();
+  SmallVector<fuzzerop::SourcePred, 2> SourcePreds;
+  if (F->arg_size() != 0) {
+    for (Type *ArgTy : FTy->params()) {
+      SourcePreds.push_back(fuzzerop::onlyType(ArgTy));
+    }
+  }
+  bool isRetVoid = (F->getReturnType() == Type::getVoidTy(M->getContext()));
+  auto BuilderFunc = [FTy, F, isRetVoid](ArrayRef<Value *> Srcs,
+                                         Instruction *Inst) {
+    StringRef Name = isRetVoid ? nullptr : "C";
+    CallInst *Call = CallInst::Create(FTy, F, Srcs, Name, Inst);
+    // Don't return this call inst if it return void as it can't be sinked.
+    return isRetVoid ? nullptr : Call;
+  };
+
+  SmallVector<Instruction *, 32> Insts;
+  for (auto I = BB.getFirstInsertionPt(), E = BB.end(); I != E; ++I)
+    Insts.push_back(&*I);
+  if (Insts.size() < 1)
+    return;
+
+  // Choose an insertion point for our new call instruction.
+  uint64_t IP = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
+
+  auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
+  auto InstsAfter = makeArrayRef(Insts).slice(IP);
+
+  // Choose a source, which will be used to constrain the operation selection.
+  SmallVector<Value *, 2> Srcs;
+
+  for (const auto &Pred : makeArrayRef(SourcePreds)) {
+    Srcs.push_back(IB.findOrCreateSource(BB, InstsBefore, Srcs, Pred));
+  }
+
+  if (Value *Op = BuilderFunc(Srcs, Insts[IP])) {
+    // Find a sink and wire up the results of the operation.
+    IB.connectToSink(BB, InstsAfter, Op);
+  }
 }
 
 /// Return a case value that is not already taken to make sure we don't have two

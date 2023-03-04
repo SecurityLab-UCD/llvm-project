@@ -421,7 +421,19 @@ TEST(InstModificationIRStrategy, FastMath) {
   for (auto p : FPOpsHasFastMath)
     ASSERT_TRUE(p.second);
 }
+TEST(FunctionIRStrategy, Func) {
+  LLVMContext Ctx;
+  const char *Source = "";
+  auto Mutator = createMutator<FunctionIRStrategy>();
+  ASSERT_TRUE(Mutator);
 
+  auto M = parseAssembly(Source, Ctx);
+  srand(Seed);
+  for (int i = 0; i < 100; i++) {
+    Mutator->mutateModule(*M, rand(), 0, 1024);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
 TEST(InsertCFGStrategy, CFG) {
   StringRef Source = "\n\
       define i32 @test(i1 %C1, i1 %C2, i1 %C3, i16 %S1, i16 %S2, i32 %I1) { \n\
