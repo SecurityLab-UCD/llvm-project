@@ -399,22 +399,38 @@ TEST(RandomIRBuilderTest, createStackMemory) {
 TEST(RandomIRBuilderTest, findOrCreateGlobalVariable) {
   LLVMContext Ctx;
   const char *SourceCode = "\n\
-    @G = global i32 1 \n\
+    @G0 = external global i16 \n\
+    @G1 = global i32 1 \n\
   ";
-  std::vector<Type *> Types = {Type::getInt32Ty(Ctx), Type::getInt64Ty(Ctx)};
+  std::vector<Type *> Types = {Type::getInt16Ty(Ctx), Type::getInt32Ty(Ctx), Type::getInt64Ty(Ctx)};
   RandomIRBuilder IB(Seed, Types);
-  std::unique_ptr<Module> M1 = parseAssembly(SourceCode, Ctx);
-  IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[0]));
-  ASSERT_FALSE(verifyModule(*M1, &errs()));
-  unsigned NumGV = M1->getNumNamedValues();
-  auto [GV1, DidCreate1] =
-      IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[0]));
-  ASSERT_FALSE(verifyModule(*M1, &errs()));
-  ASSERT_EQ(M1->getNumNamedValues(), NumGV + DidCreate1);
 
+  // Find external global
+  std::unique_ptr<Module> M0 = parseAssembly(SourceCode, Ctx);
+  Type *type = M0->globals().begin()->getValueType();
+  ASSERT_TRUE(type->isIntegerTy(16));
+  IB.findOrCreateGlobalVariable(&*M0, {}, fuzzerop::onlyType(Types[0]));
+  ASSERT_FALSE(verifyModule(*M0, &errs()));
+  unsigned NumGV0 = M0->getNumNamedValues();
+  auto [GV0, DidCreate0] =
+      IB.findOrCreateGlobalVariable(&*M0, {}, fuzzerop::onlyType(Types[0]));
+  ASSERT_FALSE(verifyModule(*M0, &errs()));
+  ASSERT_EQ(M0->getNumNamedValues(), NumGV0 + DidCreate0);
+
+  // Find non-external global
+  std::unique_ptr<Module> M1 = parseAssembly(SourceCode, Ctx);
+  IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[1]));
+  ASSERT_FALSE(verifyModule(*M1, &errs()));
+  unsigned NumGV1 = M1->getNumNamedValues();
+  auto [GV1, DidCreate1] =
+      IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[1]));
+  ASSERT_FALSE(verifyModule(*M1, &errs()));
+  ASSERT_EQ(M1->getNumNamedValues(), NumGV1 + DidCreate1);
+
+  // Create global 
   std::unique_ptr<Module> M2 = parseAssembly(SourceCode, Ctx);
   auto [GV2, DidCreate2] =
-      IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[1]));
+      IB.findOrCreateGlobalVariable(&*M2, {}, fuzzerop::onlyType(Types[2]));
   ASSERT_FALSE(verifyModule(*M2, &errs()));
   ASSERT_TRUE(DidCreate2);
 }
