@@ -71,7 +71,7 @@ RandomIRBuilder::findOrCreateGlobalVariable(Module *M, ArrayRef<Value *> Srcs,
   auto MatchesPred = [&Srcs, &Pred](GlobalVariable *GV) {
     // Can't directly compare GV's type, as it would be a pointer to the actual
     // type.
-    return Pred.matches(Srcs, GV->getInitializer());
+    return Pred.matches(Srcs, UndefValue::get(GV->getValueType()));
   };
   bool DidCreate = false;
   SmallVector<GlobalVariable *, 4> GlobalVars;
@@ -156,7 +156,7 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
     case SrcFromGlobalVariable: {
       Module *M = BB.getParent()->getParent();
       auto [GV, DidCreate] = findOrCreateGlobalVariable(M, Srcs, Pred);
-      Type *Ty = GV->getInitializer()->getType();
+      Type *Ty = GV->getValueType();
       LoadInst *LoadGV = nullptr;
       if (BB.getTerminator()) {
         LoadGV = new LoadInst(Ty, GV, "LGV", &*BB.getFirstInsertionPt());
