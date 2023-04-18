@@ -20,7 +20,6 @@ set(LLVM_LINK_COMPONENTS
 
 add_llvm_tool(llvm-stress
   llvm-stress.cpp
-  mutator.cpp
 
   DEPENDS
   intrinsics_gen
