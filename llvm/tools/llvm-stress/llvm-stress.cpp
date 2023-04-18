@@ -33,10 +33,6 @@ static cl::OptionCategory StressCategory("Stress Options");
 static cl::opt<unsigned> SeedCL("seed", cl::desc("Seed used for randomness"),
                                 cl::init(0), cl::cat(StressCategory));
 
-static cl::opt<unsigned>
-    RepeatCL("repeat", cl::desc("Number of times to mutate the module"),
-             cl::init(100), cl::value_desc("times"), cl::cat(StressCategory));
-
 static cl::opt<std::string>
     InputFilename("i", cl::desc("Mutate an existing module from file"),
                   cl::value_desc("filename"), cl::cat(StressCategory));
@@ -59,7 +55,7 @@ void addVectorTypeGetters(std::vector<TypeGetter> &Types) {
   }
 }
 
-auto createCustomMutator() {
+auto createCustomISelMutator() {
   std::vector<TypeGetter> Types{
       Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty, Type::getInt32Ty,
       Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy};
@@ -134,10 +130,6 @@ int main(int argc, char **argv) {
   cl::HideUnrelatedOptions({&StressCategory, &getColorCategory()});
   cl::ParseCommandLineOptions(argc, argv, "llvm codegen stress-tester\n");
 
-  if (RepeatCL == 0) {
-    errs() << "Repeat count must be greater than zero.\n";
-  }
-
   LLVMContext Context;
 
   constexpr int MAX_SIZE = 1048576; // 1 MiB
@@ -160,7 +152,8 @@ int main(int argc, char **argv) {
     srand(mix(clock(), time(NULL), getpid()));
     Seed = rand();
   }
-  LLVM_DEBUG(errs() << Seed << '\n');
+  errs() << Seed << '\n';
+  // LLVMFuzzerCustomMutator((uint8_t *)Buffer.data(), Size, MAX_SIZE, Seed);
   std::unique_ptr<Module> M;
   auto Data = (uint8_t *)Buffer.data();
   if (Size <= 1)
@@ -179,10 +172,8 @@ int main(int argc, char **argv) {
   }
 
   srand(Seed);
-  auto Mutator = createCustomMutator();
-  for (int i = 0; i < RepeatCL; i++) {
-    Mutator->mutateModule(*M, rand(), Size, MAX_SIZE);
-  }
+  auto Mutator = createCustomISelMutator();
+  Mutator->mutateModule(*M, rand(), Size, MAX_SIZE);
   size_t NewSize = writeModule(*M, Data, MAX_SIZE);
 
   M = llvm::parseModule((uint8_t *)Buffer.data(), NewSize, Context);
