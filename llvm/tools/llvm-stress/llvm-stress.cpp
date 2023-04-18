@@ -11,6 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "mutator.h"
+
 #include "llvm/FuzzMutate/IRMutator.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Verifier.h"
@@ -43,50 +45,6 @@ static cl::opt<std::string> OutputFilename("o",
                                            cl::cat(StressCategory));
 
 namespace {
-void addVectorTypeGetters(std::vector<TypeGetter> &Types) {
-  int VectorLength[] = {1, 2, 4, 8, 16, 32};
-  std::vector<TypeGetter> BasicTypeGetters(Types);
-  for (auto typeGetter : BasicTypeGetters) {
-    for (int length : VectorLength) {
-      Types.push_back([typeGetter, length](LLVMContext &C) {
-        return VectorType::get(typeGetter(C), length, false);
-      });
-    }
-  }
-}
-
-auto createCustomISelMutator() {
-  std::vector<TypeGetter> Types{
-      Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty, Type::getInt32Ty,
-      Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy};
-  std::vector<TypeGetter> ScalarTypes = Types;
-
-  addVectorTypeGetters(Types);
-
-  TypeGetter OpaquePtrGetter = [](LLVMContext &C) {
-    return PointerType::get(Type::getInt32Ty(C), 0);
-  };
-  Types.push_back(OpaquePtrGetter);
-
-  // Copy scalar types to change distribution.
-  for (int i = 0; i < 5; i++)
-    Types.insert(Types.end(), ScalarTypes.begin(), ScalarTypes.end());
-
-  std::vector<std::unique_ptr<IRMutationStrategy>> Strategies;
-  std::vector<fuzzerop::OpDescriptor> Ops = InjectorIRStrategy::getDefaultOps();
-
-  Strategies.push_back(std::make_unique<InjectorIRStrategy>(
-      InjectorIRStrategy::getDefaultOps()));
-  Strategies.push_back(std::make_unique<InstDeleterIRStrategy>());
-  Strategies.push_back(std::make_unique<InstModificationIRStrategy>());
-  // Strategies.push_back(std::make_unique<FunctionIRStrategy>());
-  Strategies.push_back(std::make_unique<InsertCFGStrategy>());
-  Strategies.push_back(std::make_unique<InsertPHIStrategy>());
-  Strategies.push_back(std::make_unique<SinkInstructionStrategy>());
-  Strategies.push_back(std::make_unique<ShuffleBlockStrategy>());
-
-  return std::make_unique<IRMutator>(std::move(Types), std::move(Strategies));
-}
 
 // https://stackoverflow.com/questions/322938/recommended-way-to-initialize-srand
 unsigned long mix(unsigned long a, unsigned long b, unsigned long c) {
@@ -146,6 +104,7 @@ int main(int argc, char **argv) {
     }
   }
 
+  createISelMutator();
   unsigned Seed = SeedCL;
   if (SeedCL == 0) {
     // Replace default value with a more reasonable seed.
@@ -153,30 +112,11 @@ int main(int argc, char **argv) {
     Seed = rand();
   }
   errs() << Seed << '\n';
-  // LLVMFuzzerCustomMutator((uint8_t *)Buffer.data(), Size, MAX_SIZE, Seed);
-  std::unique_ptr<Module> M;
-  auto Data = (uint8_t *)Buffer.data();
-  if (Size <= 1)
-    // We got bogus data given an empty corpus - just create a new module.
-    M.reset(new Module("M", Context));
-  else
-    M = parseModule(Data, Size, Context);
-  if (!M) {
-    errs() << "Parse module error. No mutation is done. Data size: " << Size
-           << ". Given data wrote to err.bc\n";
-    std::ofstream outfile =
-        std::ofstream("err.bc", std::ios::out | std::ios::binary);
-    outfile.write((char *)Data, Size);
-    outfile.close();
-    exit(1);
-  }
+  size_t NewSize =
+      LLVMFuzzerCustomMutator((uint8_t *)Buffer.data(), Size, MAX_SIZE, Seed);
 
-  srand(Seed);
-  auto Mutator = createCustomISelMutator();
-  Mutator->mutateModule(*M, rand(), Size, MAX_SIZE);
-  size_t NewSize = writeModule(*M, Data, MAX_SIZE);
-
-  M = llvm::parseModule((uint8_t *)Buffer.data(), NewSize, Context);
+  std::unique_ptr<llvm::Module> M =
+      llvm::parseModule((uint8_t *)Buffer.data(), NewSize, Context);
 
   // Figure out what stream we are supposed to write to...
   std::unique_ptr<ToolOutputFile> Out;
