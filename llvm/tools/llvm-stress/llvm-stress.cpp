@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
         std::ofstream("err.bc", std::ios::out | std::ios::binary);
     outfile.write((char *)Data, Size);
     outfile.close();
-    exit(1);
+    return 1;
   }
 
   srand(Seed);
