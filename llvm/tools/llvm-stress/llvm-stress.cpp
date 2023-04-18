@@ -183,6 +183,9 @@ int main(int argc, char **argv) {
   for (int i = 0; i < RepeatCL; i++) {
     Mutator->mutateModule(*M, rand(), Size, MAX_SIZE);
   }
+  size_t NewSize = writeModule(*M, Data, MAX_SIZE);
+
+  M = llvm::parseModule((uint8_t *)Buffer.data(), NewSize, Context);
 
   // Figure out what stream we are supposed to write to...
   std::unique_ptr<ToolOutputFile> Out;
