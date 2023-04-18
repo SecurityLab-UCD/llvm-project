@@ -7,13 +7,11 @@ set(LLVM_LINK_COMPONENTS
   AsmPrinter
   BitReader
   BitWriter
-  CodeGen
   Core
   FuzzMutate
   IRReader
   MC
   ScalarOpts
-  SelectionDAG
   Support
   Target
   )
