@@ -15,7 +15,6 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
@@ -26,8 +25,6 @@
 #include <time.h>
 #include <unistd.h>
 #include <vector>
-
-#define DEBUG_TYPE "llvm-stress"
 
 namespace llvm {
 
@@ -163,7 +160,7 @@ int main(int argc, char **argv) {
     srand(mix(clock(), time(NULL), getpid()));
     Seed = rand();
   }
-  LLVM_DEBUG(dbgs() << Seed << '\n');
+  LLVM_DEBUG(errs() << Seed << '\n');
   std::unique_ptr<Module> M;
   auto Data = (uint8_t *)Buffer.data();
   if (Size <= 1)
@@ -183,7 +180,7 @@ int main(int argc, char **argv) {
 
   srand(Seed);
   auto Mutator = createCustomMutator();
-  for (unsigned i = 0; i < RepeatCL; i++) {
+  for (int i = 0; i < RepeatCL; i++) {
     Mutator->mutateModule(*M, rand(), Size, MAX_SIZE);
   }
 
