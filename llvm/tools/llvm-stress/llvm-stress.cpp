@@ -11,14 +11,17 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/FuzzMutate/IRMutator.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Verifier.h"
+#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/InitLLVM.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/WithColor.h"
 #include <fstream>
@@ -48,6 +51,10 @@ static cl::opt<std::string> OutputFilename("o",
                                            cl::desc("Override output filename"),
                                            cl::value_desc("filename"),
                                            cl::cat(StressCategory));
+
+static cl::opt<unsigned> MaxSizeCL(
+    "max-size", cl::desc("Max size of mutated module (defaults to 1 MiB)"),
+    cl::init(1048576), cl::value_desc("bytes"), cl::cat(StressCategory));
 
 namespace {
 void addVectorTypeGetters(std::vector<TypeGetter> &Types) {
@@ -139,23 +146,23 @@ int main(int argc, char **argv) {
 
   if (RepeatCL == 0) {
     errs() << "Repeat count must be greater than zero.\n";
-    return 1;
   }
 
   LLVMContext Context;
-
-  constexpr int MAX_SIZE = 1048576; // 1 MiB
-  std::streamsize Size = 0;
-  std::vector<char> Buffer(MAX_SIZE);
-
+  std::unique_ptr<Module> M;
   if (!InputFilename.empty()) {
-    std::ifstream InFile(InputFilename, std::ios::binary | std::ios::ate);
-    Size = InFile.tellg();
-    InFile.seekg(0, std::ios::beg);
-    if (!InFile.read(Buffer.data(), Size)) {
-      errs() << "Error reading input file.\n";
+    auto Diagnostic = SMDiagnostic();
+    M = parseIRFile(InputFilename, Diagnostic, Context);
+    if (!M) {
+      Diagnostic.print(argv[0], errs());
       return 1;
     }
+  } else {
+    M = std::make_unique<Module>("M", Context);
+  }
+  if (M->size() > MaxSizeCL) {
+    errs() << "Given module is larger than " << MaxSizeCL << " bytes.\n";
+    return 1;
   }
 
   unsigned Seed = SeedCL;
@@ -165,27 +172,11 @@ int main(int argc, char **argv) {
     Seed = rand();
   }
   LLVM_DEBUG(dbgs() << Seed << '\n');
-  std::unique_ptr<Module> M;
-  auto Data = (uint8_t *)Buffer.data();
-  if (Size <= 1)
-    // We got bogus data given an empty corpus - just create a new module.
-    M.reset(new Module("M", Context));
-  else
-    M = parseModule(Data, Size, Context);
-  if (!M) {
-    errs() << "Parse module error. No mutation is done. Data size: " << Size
-           << ". Given data wrote to err.bc\n";
-    std::ofstream outfile =
-        std::ofstream("err.bc", std::ios::out | std::ios::binary);
-    outfile.write((char *)Data, Size);
-    outfile.close();
-    return 1;
-  }
 
   srand(Seed);
   auto Mutator = createCustomMutator();
   for (unsigned i = 0; i < RepeatCL; i++) {
-    Mutator->mutateModule(*M, rand(), Size, MAX_SIZE);
+    Mutator->mutateModule(*M, rand(), M->size(), MaxSizeCL);
   }
 
   // Figure out what stream we are supposed to write to...
@@ -205,8 +196,12 @@ int main(int argc, char **argv) {
   if (verifyModule(*M.get(), &errs()))
     report_fatal_error("Broken module found, compilation aborted!");
 
-  // Output textual IR.
-  M->print(Out->os(), nullptr);
+  // If extension matches, output bitcode
+  if (StringRef(OutputFilename.getValue()).ends_with_insensitive(".bc")) {
+    WriteBitcodeToFile(*M, Out->os());
+  } else { // defaults to textual IR
+    M->print(Out->os(), nullptr);
+  }
 
   Out->keep();
 
