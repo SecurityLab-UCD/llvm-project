@@ -168,7 +168,7 @@ int main(int argc, char **argv) {
   }
 
   unsigned Seed = SeedCL;
-  if (SeedCL == 0) {
+  if (SeedCL.getNumOccurrences() == 0) {
     // Replace default value with a more reasonable seed.
     srand(mix(clock(), time(NULL), getpid()));
     Seed = rand();
