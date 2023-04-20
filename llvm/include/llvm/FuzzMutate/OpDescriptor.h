@@ -187,9 +187,9 @@ static inline SourcePred matchFirstLengthWAnyType() {
   auto Pred = [](ArrayRef<Value *> Cur, const Value *V) {
     assert(!Cur.empty() && "No first source yet");
     Type *This = V->getType(), *First = Cur[0]->getType();
-    VectorType *ThisVec = dyn_cast<VectorType>(This),
-               *FirstVec = dyn_cast<VectorType>(First);
-    if (ThisVec != nullptr && FirstVec != nullptr) {
+    VectorType *ThisVec = dyn_cast<VectorType>(This);
+    VectorType *FirstVec = dyn_cast<VectorType>(First);
+    if (ThisVec && FirstVec) {
       return ThisVec->getElementCount() == FirstVec->getElementCount();
     }
     return (ThisVec == nullptr) && (FirstVec == nullptr) && (!This->isVoidTy());
@@ -204,13 +204,12 @@ static inline SourcePred matchFirstLengthWAnyType() {
       isVec = true;
     }
     for (Type *T : BaseTypes) {
-      if (!T->isVectorTy() && !T->isVoidTy()) {
-        if (isVec) {
+      if (VectorType::isValidElementType(T)) {
+        if (isVec)
           // If the first pred is <i1 x N>, make the result <T x N>
           makeConstantsWithType(VectorType::get(T, EC), Result);
-        } else {
+        else
           makeConstantsWithType(T, Result);
-        }
       }
     }
     assert(!Result.empty() && "No potential constants.");

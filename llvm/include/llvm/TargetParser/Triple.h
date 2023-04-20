@@ -223,7 +223,8 @@ public:
     WASI,       // Experimental WebAssembly OS
     Emscripten,
     ShaderModel, // DirectX ShaderModel
-    LastOSType = ShaderModel
+    LiteOS,
+    LastOSType = LiteOS
   };
   enum EnvironmentType {
     UnknownEnvironment,
@@ -273,8 +274,8 @@ public:
     Callable,
     Mesh,
     Amplification,
-
-    LastEnvironmentType = Amplification
+    OpenHOS,
+    LastEnvironmentType = OpenHOS
   };
   enum ObjectFormatType {
     UnknownObjectFormat,
@@ -740,8 +741,17 @@ public:
     return getEnvironment() == Triple::Musl ||
            getEnvironment() == Triple::MuslEABI ||
            getEnvironment() == Triple::MuslEABIHF ||
-           getEnvironment() == Triple::MuslX32;
+           getEnvironment() == Triple::MuslX32 ||
+           getEnvironment() == Triple::OpenHOS || isOSLiteOS();
   }
+
+  /// Tests whether the target is OHOS
+  /// LiteOS default enviroment is also OHOS, but omited on triple.
+  bool isOHOSFamily() const { return isOpenHOS() || isOSLiteOS(); }
+
+  bool isOpenHOS() const { return getEnvironment() == Triple::OpenHOS; }
+
+  bool isOSLiteOS() const { return getOS() == Triple::LiteOS; }
 
   /// Tests whether the target is DXIL.
   bool isDXIL() const {
@@ -789,6 +799,7 @@ public:
             getEnvironment() == Triple::MuslEABI ||
             getEnvironment() == Triple::EABIHF ||
             getEnvironment() == Triple::GNUEABIHF ||
+            getEnvironment() == Triple::OpenHOS ||
             getEnvironment() == Triple::MuslEABIHF || isAndroid()) &&
            isOSBinFormatELF();
   }
@@ -968,8 +979,11 @@ public:
   }
 
   /// Tests whether the target uses emulated TLS as default.
+  ///
+  /// Note: Android API level 29 (10) introduced ELF TLS.
   bool hasDefaultEmulatedTLS() const {
-    return isAndroid() || isOSOpenBSD() || isWindowsCygwinEnvironment();
+    return (isAndroid() && isAndroidVersionLT(29)) || isOSOpenBSD() ||
+           isWindowsCygwinEnvironment() || isOHOSFamily();
   }
 
   /// Tests whether the target uses -data-sections as default.
@@ -1093,6 +1107,9 @@ public:
 
   /// Get the canonical name for the \p Kind environment.
   static StringRef getEnvironmentTypeName(EnvironmentType Kind);
+
+  /// Get the name for the \p Object format.
+  static StringRef getObjectFormatTypeName(ObjectFormatType ObjectFormat);
 
   /// @}
   /// @name Static helpers for converting alternate architecture names.

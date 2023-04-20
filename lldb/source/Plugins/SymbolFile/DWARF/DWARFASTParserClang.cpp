@@ -1351,6 +1351,11 @@ TypeSP DWARFASTParserClang::ParsePointerToMemberType(
   Type *class_type =
       dwarf->ResolveTypeUID(attrs.containing_type.Reference(), true);
 
+  // Check to make sure pointers are not NULL before attempting to
+  // dereference them.
+  if ((class_type == nullptr) || (pointee_type == nullptr))
+    return nullptr;
+
   CompilerType pointee_clang_type = pointee_type->GetForwardCompilerType();
   CompilerType class_clang_type = class_type->GetForwardCompilerType();
 
@@ -2394,12 +2399,12 @@ DWARFASTParserClang::ParseFunctionFromDWARF(CompileUnit &comp_unit,
   DWARFRangeList func_ranges;
   const char *name = nullptr;
   const char *mangled = nullptr;
-  int decl_file = 0;
-  int decl_line = 0;
-  int decl_column = 0;
-  int call_file = 0;
-  int call_line = 0;
-  int call_column = 0;
+  std::optional<int> decl_file;
+  std::optional<int> decl_line;
+  std::optional<int> decl_column;
+  std::optional<int> call_file;
+  std::optional<int> call_line;
+  std::optional<int> call_column;
   DWARFExpressionList frame_base;
 
   const dw_tag_t tag = die.Tag();
@@ -2429,9 +2434,10 @@ DWARFASTParserClang::ParseFunctionFromDWARF(CompileUnit &comp_unit,
 
     FunctionSP func_sp;
     std::unique_ptr<Declaration> decl_up;
-    if (decl_file != 0 || decl_line != 0 || decl_column != 0)
-      decl_up = std::make_unique<Declaration>(die.GetCU()->GetFile(decl_file),
-                                              decl_line, decl_column);
+    if (decl_file || decl_line || decl_column)
+      decl_up = std::make_unique<Declaration>(
+          die.GetCU()->GetFile(decl_file ? *decl_file : 0),
+          decl_line ? *decl_line : 0, decl_column ? *decl_column : 0);
 
     SymbolFileDWARF *dwarf = die.GetDWARF();
     // Supply the type _only_ if it has already been parsed

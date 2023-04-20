@@ -122,8 +122,6 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
     }
     case FunctionArgument: {
       Function *F = BB.getParent();
-      // Somehow I can't use iterators to init these vectors, it will have type
-      // mismatch.
       SmallVector<Argument *, 8> Args;
       for (uint64_t i = 0; i < F->arg_size(); i++) {
         Args.push_back(F->getArg(i));
@@ -138,8 +136,6 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
       auto Dominators = getDominators(&BB);
       std::shuffle(Dominators.begin(), Dominators.end(), Rand);
       for (BasicBlock *Dom : Dominators) {
-        // Somehow I can't use iterators to init these vectors, it will have
-        // type mismatch.
         SmallVector<Instruction *, 16> Instructions;
         for (Instruction &I : *Dom) {
           Instructions.push_back(&I);
@@ -263,6 +259,13 @@ static bool isCompatibleReplacement(const Instruction *I, const Use &Operand,
     if (OperandNo >= 1)
       return false;
     break;
+  case Instruction::Call:
+  case Instruction::Invoke:
+  case Instruction::CallBr: {
+    const CallBase *II = cast<CallBase>(I);
+    const Function *Callee = II->getCalledFunction();
+    return !Callee->hasParamAttribute(OperandNo, Attribute::ImmArg);
+  }
   default:
     break;
   }
@@ -280,11 +283,6 @@ Instruction *RandomIRBuilder::connectToSink(BasicBlock &BB,
       [this, V](ArrayRef<Instruction *> Instructions) -> Instruction * {
     auto RS = makeSampler<Use *>(Rand);
     for (auto &I : Instructions) {
-      if (isa<IntrinsicInst>(I))
-        // TODO: Replacing operands of intrinsics would be interesting,
-        // but there's no easy way to verify that a given replacement is
-        // valid given that intrinsics can impose arbitrary constraints.
-        continue;
       for (Use &U : I->operands())
         if (isCompatibleReplacement(I, U, V))
           RS.sample(&U, 1);
@@ -311,11 +309,8 @@ Instruction *RandomIRBuilder::connectToSink(BasicBlock &BB,
       std::shuffle(Dominators.begin(), Dominators.end(), Rand);
       for (BasicBlock *Dom : Dominators) {
         for (Instruction &I : *Dom) {
-          if (PointerType *PtrTy = dyn_cast<PointerType>(I.getType())) {
-            if (PtrTy->isOpaqueOrPointeeTypeMatches(V->getType())) {
-              return new StoreInst(V, &I, Insts.back());
-            }
-          }
+          if (PointerType *PtrTy = dyn_cast<PointerType>(I.getType()))
+            return new StoreInst(V, &I, Insts.back());
         }
       }
       break;
@@ -415,7 +410,7 @@ Function *RandomIRBuilder::createFunctionDeclaration(Module &M,
 }
 Function *RandomIRBuilder::createFunctionDeclaration(Module &M) {
   return createFunctionDeclaration(
-      M, uniform<uint64_t>(Rand, this->MinNumArgs, this->MaxNumArgs));
+      M, uniform<uint64_t>(Rand, MinArgNum, MaxArgNum));
 }
 
 Function *RandomIRBuilder::createFunctionDefinition(Module &M,
@@ -425,10 +420,12 @@ Function *RandomIRBuilder::createFunctionDefinition(Module &M,
   // TODO: Some arguments and a return value would probably be more
   // interesting.
   LLVMContext &Context = M.getContext();
+  DataLayout DL(&M);
   BasicBlock *BB = BasicBlock::Create(Context, "BB", F);
   Type *RetTy = F->getReturnType();
   if (RetTy != Type::getVoidTy(Context)) {
-    Instruction *RetAlloca = new AllocaInst(RetTy, 0, "RP", BB);
+    Instruction *RetAlloca =
+        new AllocaInst(RetTy, DL.getAllocaAddrSpace(), "RP", BB);
     Instruction *RetLoad = new LoadInst(RetTy, RetAlloca, "", BB);
     ReturnInst::Create(Context, RetLoad, BB);
   } else {
@@ -439,5 +436,5 @@ Function *RandomIRBuilder::createFunctionDefinition(Module &M,
 }
 Function *RandomIRBuilder::createFunctionDefinition(Module &M) {
   return createFunctionDefinition(
-      M, uniform<uint64_t>(Rand, this->MinNumArgs, this->MaxNumArgs));
+      M, uniform<uint64_t>(Rand, MinArgNum, MaxArgNum));
 }

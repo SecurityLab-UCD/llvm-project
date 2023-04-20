@@ -168,6 +168,21 @@ def IntrSpeculatable : IntrinsicProperty;
 def IntrHasSideEffects : IntrinsicProperty;
 
 //===----------------------------------------------------------------------===//
+// IIT constants and utils
+//===----------------------------------------------------------------------===//
+
+// llvm::Intrinsic::IITDescriptor::ArgKind::AK_%
+def ArgKind {
+  int Any        = 0;
+  int AnyInteger = 1;
+  int AnyFloat   = 2;
+  int AnyVector  = 3;
+  int AnyPointer = 4;
+
+  int MatchType  = 7;
+}
+
+//===----------------------------------------------------------------------===//
 // Types used by intrinsics.
 //===----------------------------------------------------------------------===//
 
@@ -404,6 +419,7 @@ class MSBuiltin<string name> {
   string MSBuiltinName = name;
 }
 
+#ifndef TEST_INTRINSICS_SUPPRESS_DEFS
 
 //===--------------- Variable Argument Handling Intrinsics ----------------===//
 //
@@ -608,6 +624,10 @@ def int_instrprof_increment : Intrinsic<[],
 def int_instrprof_increment_step : Intrinsic<[],
                                         [llvm_ptr_ty, llvm_i64_ty,
                                          llvm_i32_ty, llvm_i32_ty, llvm_i64_ty]>;
+
+// A timestamp for instrumentation based profiling.
+def int_instrprof_timestamp : Intrinsic<[], [llvm_ptr_ty, llvm_i64_ty,
+                                             llvm_i32_ty, llvm_i32_ty]>;
 
 // A call to profile runtime for value profiling of target expressions
 // through instrumentation based profiling.
@@ -1002,10 +1022,6 @@ let IntrProperties = [IntrNoMem, IntrSpeculatable, IntrWillReturn] in {
                                        [llvm_metadata_ty,
                                         llvm_metadata_ty,
                                         llvm_metadata_ty]>;
-  def int_dbg_addr         : DefaultAttrsIntrinsic<[],
-                                       [llvm_metadata_ty,
-                                        llvm_metadata_ty,
-                                        llvm_metadata_ty]>;
   def int_dbg_assign        : DefaultAttrsIntrinsic<[],
                                        [llvm_metadata_ty,
                                         llvm_metadata_ty,
@@ -1379,7 +1395,7 @@ def int_experimental_guard : DefaultAttrsIntrinsic<[], [llvm_i1_ty, llvm_vararg_
 
 // Supports widenable conditions for guards represented as explicit branches.
 def int_experimental_widenable_condition : DefaultAttrsIntrinsic<[llvm_i1_ty], [],
-        [IntrInaccessibleMemOnly, IntrWillReturn, IntrSpeculatable]>;
+        [IntrInaccessibleMemOnly, IntrWillReturn, IntrSpeculatable, NoUndef<RetIndex>]>;
 
 // NOP: calls/invokes to this intrinsic are removed by codegen
 def int_donothing : DefaultAttrsIntrinsic<[], [], [IntrNoMem, IntrWillReturn]>;
@@ -1970,7 +1986,7 @@ def int_memset_element_unordered_atomic
 
 //===------------------------ Reduction Intrinsics ------------------------===//
 //
-let IntrProperties = [IntrNoMem] in {
+let IntrProperties = [IntrNoMem, IntrSpeculatable] in {
 
   def int_vector_reduce_fadd : DefaultAttrsIntrinsic<[LLVMVectorElementType<0>],
                                          [LLVMVectorElementType<0>,
@@ -2207,3 +2223,5 @@ include "llvm/IR/IntrinsicsSPIRV.td"
 include "llvm/IR/IntrinsicsVE.td"
 include "llvm/IR/IntrinsicsDirectX.td"
 include "llvm/IR/IntrinsicsLoongArch.td"
+
+#endif // TEST_INTRINSICS_SUPPRESS_DEFS

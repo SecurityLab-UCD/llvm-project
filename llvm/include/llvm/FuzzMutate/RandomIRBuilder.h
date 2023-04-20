@@ -24,11 +24,9 @@ class Function;
 class GlobalVariable;
 class Instruction;
 class LLVMContext;
+class Module;
 class Type;
-class Module;
-class Function;
 class Value;
-class Module;
 
 namespace fuzzerop {
 class SourcePred;
@@ -41,15 +39,12 @@ struct RandomIRBuilder {
   RandomEngine Rand;
   SmallVector<Type *, 16> KnownTypes;
 
-  uint64_t MinNumArgs = 0;
-  uint64_t MaxNumArgs = 5;
-  uint64_t MinNumFunctions = 1;
+  uint64_t MinArgNum = 0;
+  uint64_t MaxArgNum = 5;
+  uint64_t MinFunctionNum = 1;
 
-  RandomIRBuilder(int Seed, ArrayRef<Type *> AllowedTypes, uint64_t MinArgs = 0,
-                  uint64_t MaxArgs = 5, uint64_t MinFunctions = 1)
-      : Rand(Seed), KnownTypes(AllowedTypes.begin(), AllowedTypes.end()),
-        MinNumArgs(MinArgs), MaxNumArgs(MaxArgs),
-        MinNumFunctions(MinFunctions) {}
+  RandomIRBuilder(int Seed, ArrayRef<Type *> AllowedTypes)
+      : Rand(Seed), KnownTypes(AllowedTypes.begin(), AllowedTypes.end()) {}
 
   // TODO: Try to make this a bit less of a random mishmash of functions.
 

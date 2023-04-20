@@ -99,8 +99,8 @@ TEST(RandomIRBuilderTest, InsertValueIndexes) {
 
   fuzzerop::OpDescriptor IVDescr = fuzzerop::insertValueDescriptor(1);
 
-  std::vector<Type *> Types = {Type::getInt8Ty(Ctx), Type::getInt32Ty(Ctx),
-                               Type::getInt64Ty(Ctx)};
+  std::array<Type *, 3> Types = {Type::getInt8Ty(Ctx), Type::getInt32Ty(Ctx),
+                                 Type::getInt64Ty(Ctx)};
   RandomIRBuilder IB(Seed, Types);
 
   // Get first basic block of the first function
@@ -177,8 +177,8 @@ TEST(RandomIRBuilderTest, InsertValueArray) {
 
   fuzzerop::OpDescriptor Descr = fuzzerop::insertValueDescriptor(1);
 
-  std::vector<Type *> Types = {Type::getInt8Ty(Ctx), Type::getInt32Ty(Ctx),
-                               Type::getInt64Ty(Ctx)};
+  std::array<Type *, 3> Types = {Type::getInt8Ty(Ctx), Type::getInt32Ty(Ctx),
+                                 Type::getInt64Ty(Ctx)};
   RandomIRBuilder IB(Seed, Types);
 
   // Get first basic block of the first function
@@ -218,7 +218,7 @@ TEST(RandomIRBuilderTest, Invokes) {
       "}";
   auto M = parseAssembly(SourceCode, Ctx);
 
-  std::vector<Type *> Types = {Type::getInt8Ty(Ctx)};
+  std::array<Type *, 1> Types = {Type::getInt8Ty(Ctx)};
   RandomIRBuilder IB(Seed, Types);
 
   // Get first basic block of the test function
@@ -231,39 +231,6 @@ TEST(RandomIRBuilderTest, Invokes) {
   for (int i = 0; i < 10; ++i) {
     (void)IB.findOrCreateSource(BB, {Invoke}, {}, fuzzerop::anyIntType());
     ASSERT_TRUE(!verifyModule(*M, &errs()));
-  }
-}
-
-TEST(RandomIRBuilderTest, FirstClassTypes) {
-  // Check that we never insert new source as a load from non first class
-  // or unsized type.
-
-  LLVMContext Ctx;
-  const char *SourceCode = "%Opaque = type opaque\n"
-                           "define void @test(i8* %ptr) {\n"
-                           "entry:\n"
-                           "  %tmp = bitcast i8* %ptr to i32* (i32*)*\n"
-                           "  %tmp1 = bitcast i8* %ptr to %Opaque*\n"
-                           "  ret void\n"
-                           "}";
-  auto M = parseAssembly(SourceCode, Ctx);
-
-  std::vector<Type *> Types = {Type::getInt8Ty(Ctx)};
-  RandomIRBuilder IB(Seed, Types);
-
-  Function &F = *M->getFunction("test");
-  BasicBlock &BB = *F.begin();
-  // Non first class type
-  Instruction *FuncPtr = &*BB.begin();
-  // Unsized type
-  Instruction *OpaquePtr = &*std::next(BB.begin());
-
-  for (int i = 0; i < 10; ++i) {
-    Value *V = IB.findOrCreateSource(BB, {FuncPtr, OpaquePtr});
-    // To make sure we are allowed to load from a global variable
-    if (LoadInst *LI = dyn_cast<LoadInst>(V)) {
-      EXPECT_NE(LI->getOperand(0), FuncPtr);
-    }
   }
 }
 
@@ -281,7 +248,7 @@ TEST(RandomIRBuilderTest, SwiftError) {
                            "}";
   auto M = parseAssembly(SourceCode, Ctx);
 
-  std::vector<Type *> Types = {Type::getInt8Ty(Ctx)};
+  std::array<Type *, 1> Types = {Type::getInt8Ty(Ctx)};
   RandomIRBuilder IB(Seed, Types);
 
   // Get first basic block of the test function
@@ -321,7 +288,7 @@ TEST(RandomIRBuilderTest, dontConnectToSwitch) {
       ret void \n\
     }";
 
-  std::vector<Type *> Types = {Type::getInt32Ty(Ctx), Type::getInt1Ty(Ctx)};
+  std::array<Type *, 2> Types = {Type::getInt32Ty(Ctx), Type::getInt1Ty(Ctx)};
   RandomIRBuilder IB(Seed, Types);
   for (int i = 0; i < 20; i++) {
     std::unique_ptr<Module> M = parseAssembly(SourceCode, Ctx);
@@ -356,7 +323,7 @@ TEST(RandomIRBuilderTest, createStackMemory) {
   Type *DoubleTy = Type::getDoubleTy(Ctx);
   Constant *Double_0 =
       ConstantFP::get(Ctx, APFloat::getZero(DoubleTy->getFltSemantics()));
-  std::vector<Type *> Types = {
+  std::array<Type *, 8> Types = {
       Int32Ty,
       Int64Ty,
       DoubleTy,
@@ -366,7 +333,7 @@ TEST(RandomIRBuilderTest, createStackMemory) {
       StructType::create({Int32Ty, DoubleTy, Int64Ty}),
       ArrayType::get(Int64Ty, 4),
   };
-  std::vector<Value *> Inits = {
+  std::array<Value *, 8> Inits = {
       Int32_1,
       Int64_42,
       Double_0,
@@ -402,13 +369,14 @@ TEST(RandomIRBuilderTest, findOrCreateGlobalVariable) {
     @G0 = external global i16 \n\
     @G1 = global i32 1 \n\
   ";
-  std::vector<Type *> Types = {Type::getInt16Ty(Ctx), Type::getInt32Ty(Ctx), Type::getInt64Ty(Ctx)};
+  std::array<Type *, 3> Types = {Type::getInt16Ty(Ctx), Type::getInt32Ty(Ctx),
+                                 Type::getInt64Ty(Ctx)};
   RandomIRBuilder IB(Seed, Types);
 
   // Find external global
   std::unique_ptr<Module> M0 = parseAssembly(SourceCode, Ctx);
-  Type *type = M0->globals().begin()->getValueType();
-  ASSERT_TRUE(type->isIntegerTy(16));
+  Type *ExternalTy = M0->globals().begin()->getValueType();
+  ASSERT_TRUE(ExternalTy->isIntegerTy(16));
   IB.findOrCreateGlobalVariable(&*M0, {}, fuzzerop::onlyType(Types[0]));
   ASSERT_FALSE(verifyModule(*M0, &errs()));
   unsigned NumGV0 = M0->getNumNamedValues();
@@ -417,7 +385,7 @@ TEST(RandomIRBuilderTest, findOrCreateGlobalVariable) {
   ASSERT_FALSE(verifyModule(*M0, &errs()));
   ASSERT_EQ(M0->getNumNamedValues(), NumGV0 + DidCreate0);
 
-  // Find non-external global
+  // Find existing global
   std::unique_ptr<Module> M1 = parseAssembly(SourceCode, Ctx);
   IB.findOrCreateGlobalVariable(&*M1, {}, fuzzerop::onlyType(Types[1]));
   ASSERT_FALSE(verifyModule(*M1, &errs()));
@@ -427,7 +395,7 @@ TEST(RandomIRBuilderTest, findOrCreateGlobalVariable) {
   ASSERT_FALSE(verifyModule(*M1, &errs()));
   ASSERT_EQ(M1->getNumNamedValues(), NumGV1 + DidCreate1);
 
-  // Create global 
+  // Create new global
   std::unique_ptr<Module> M2 = parseAssembly(SourceCode, Ctx);
   auto [GV2, DidCreate2] =
       IB.findOrCreateGlobalVariable(&*M2, {}, fuzzerop::onlyType(Types[2]));
@@ -488,8 +456,8 @@ TEST(RandomIRBuilderTest, findSourceAndSink) {
           ret i64 %Add.5  \n\
       }";
   LLVMContext Ctx;
-  std::vector<Type *> Types = {Type::getInt1Ty(Ctx), Type::getInt32Ty(Ctx),
-                               Type::getInt64Ty(Ctx)};
+  std::array<Type *, 3> Types = {Type::getInt1Ty(Ctx), Type::getInt32Ty(Ctx),
+                                 Type::getInt64Ty(Ctx)};
   std::mt19937 mt(Seed);
   std::uniform_int_distribution<int> RandInt(INT_MIN, INT_MAX);
 
@@ -507,8 +475,8 @@ TEST(RandomIRBuilderTest, findSourceAndSink) {
     // Choose an insertion point for our new instruction.
     size_t IP = uniform<size_t>(IB.Rand, 1, Insts.size() - 2);
 
-    auto InstsBefore = makeArrayRef(Insts).slice(0, IP);
-    auto InstsAfter = makeArrayRef(Insts).slice(IP);
+    auto InstsBefore = ArrayRef(Insts).slice(0, IP);
+    auto InstsAfter = ArrayRef(Insts).slice(IP);
     Value *Src = IB.findOrCreateSource(
         *BB, InstsBefore, {}, fuzzerop::onlyType(Types[i % Types.size()]));
     ASSERT_TRUE(DT.dominates(Src, Insts[IP + 1]));
@@ -518,5 +486,51 @@ TEST(RandomIRBuilderTest, findSourceAndSink) {
     }
     ASSERT_TRUE(DT.dominates(Insts[IP - 1], Sink));
   }
+}
+TEST(RandomIRBuilderTest, sinkToInstrinsic) {
+  const char *Source = "\n\
+        declare double @llvm.sqrt.f64(double %Val)  \n\
+        declare void   @llvm.ubsantrap(i8 immarg) cold noreturn nounwind  \n\
+        \n\
+        define double @test(double %0, double %1, i64 %2, i64 %3, i64 %4, i8 %5) {  \n\
+        Entry:   \n\
+            %sqrt = call double @llvm.sqrt.f64(double %0)  \n\
+            call void @llvm.ubsantrap(i8 1)  \n\
+            ret double %sqrt \n\
+        }";
+  LLVMContext Ctx;
+  std::array<Type *, 3> Types = {Type::getInt8Ty(Ctx), Type::getInt64Ty(Ctx),
+                                 Type::getDoubleTy(Ctx)};
+  std::mt19937 mt(Seed);
+  std::uniform_int_distribution<int> RandInt(INT_MIN, INT_MAX);
+
+  RandomIRBuilder IB(RandInt(mt), Types);
+  std::unique_ptr<Module> M = parseAssembly(Source, Ctx);
+  Function &F = *M->getFunction("test");
+  BasicBlock &BB = F.getEntryBlock();
+  bool Modified = false;
+
+  Instruction *I = &*BB.begin();
+  for (int i = 0; i < 20; i++) {
+    Value *OldOperand = I->getOperand(0);
+    Value *Src = F.getArg(1);
+    IB.connectToSink(BB, {I}, Src);
+    Value *NewOperand = I->getOperand(0);
+    Modified |= (OldOperand != NewOperand);
+    ASSERT_FALSE(verifyModule(*M, &errs()));
+  }
+  ASSERT_TRUE(Modified);
+
+  Modified = false;
+  I = I->getNextNonDebugInstruction();
+  for (int i = 0; i < 20; i++) {
+    Value *OldOperand = I->getOperand(0);
+    Value *Src = F.getArg(5);
+    IB.connectToSink(BB, {I}, Src);
+    Value *NewOperand = I->getOperand(0);
+    Modified |= (OldOperand != NewOperand);
+    ASSERT_FALSE(verifyModule(*M, &errs()));
+  }
+  ASSERT_FALSE(Modified);
 }
 } // namespace

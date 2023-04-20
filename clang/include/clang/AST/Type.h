@@ -899,6 +899,9 @@ public:
   /// Return true if this is a trivially relocatable type.
   bool isTriviallyRelocatableType(const ASTContext &Context) const;
 
+  /// Return true if this is a trivially equality comparable type.
+  bool isTriviallyEqualityComparableType(const ASTContext &Context) const;
+
   /// Returns true if it is a class and it might be dynamic.
   bool mayBeDynamicClass() const;
 
@@ -2699,6 +2702,8 @@ public:
   }
 
   bool isSVEBool() const { return getKind() == Kind::SveBool; }
+
+  bool isSVECount() const { return getKind() == Kind::SveCount; }
 
   /// Determines whether the given kind corresponds to a placeholder type.
   static bool isPlaceholderTypeKind(Kind K) {
@@ -4931,6 +4936,8 @@ public:
   bool isQualifier() const;
 
   bool isMSTypeSpec() const;
+
+  bool isWebAssemblyFuncrefSpec() const;
 
   bool isCallingConv() const;
 

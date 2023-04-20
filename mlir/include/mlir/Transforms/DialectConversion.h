@@ -223,6 +223,14 @@ public:
   /// the type to convert to on success, and a null type on failure.
   Type convertType(Type t);
 
+  /// Attempts a 1-1 type conversion, expecting the result type to be
+  /// `TargetType`. Returns the converted type cast to `TargetType` on success,
+  /// and a null type on conversion or cast failure.
+  template <typename TargetType>
+  TargetType convertType(Type t) {
+    return dyn_cast_or_null<TargetType>(convertType(t));
+  }
+
   /// Convert the given set of types, filling 'results' as necessary. This
   /// returns failure if the conversion of any of the types fails, success
   /// otherwise.
@@ -702,8 +710,10 @@ public:
   /// PatternRewriter hook for splitting a block into two parts.
   Block *splitBlock(Block *block, Block::iterator before) override;
 
-  /// PatternRewriter hook for merging a block into another.
-  void mergeBlocks(Block *source, Block *dest, ValueRange argValues) override;
+  /// PatternRewriter hook for inlining the ops of a block into another block.
+  void inlineBlockBefore(Block *source, Block *dest, Block::iterator before,
+                         ValueRange argValues = std::nullopt) override;
+  using PatternRewriter::inlineBlockBefore;
 
   /// PatternRewriter hook for moving blocks out of a region.
   void inlineRegionBefore(Region &region, Region &parent,

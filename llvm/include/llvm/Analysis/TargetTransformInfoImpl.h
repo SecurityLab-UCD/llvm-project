@@ -89,11 +89,13 @@ public:
 
   bool hasBranchDivergence() const { return false; }
 
-  bool useGPUDivergenceAnalysis() const { return false; }
-
   bool isSourceOfDivergence(const Value *V) const { return false; }
 
   bool isAlwaysUniform(const Value *V) const { return false; }
+
+  bool isValidAddrSpaceCast(unsigned FromAS, unsigned ToAS) const {
+    return false;
+  }
 
   unsigned getFlatAddressSpace() const { return -1; }
 
@@ -163,15 +165,10 @@ public:
     return false;
   }
 
-  bool preferPredicateOverEpilogue(Loop *L, LoopInfo *LI, ScalarEvolution &SE,
-                                   AssumptionCache &AC, TargetLibraryInfo *TLI,
-                                   DominatorTree *DT,
-                                   LoopVectorizationLegality *LVL,
-                                   InterleavedAccessInfo *IAI) const {
-    return false;
-  }
+  bool preferPredicateOverEpilogue(TailFoldingInfo *TFI) const { return false; }
 
-  TailFoldingStyle getPreferredTailFoldingStyle() const {
+  TailFoldingStyle
+  getPreferredTailFoldingStyle(bool IVUpdateMayOverflow = true) const {
     return TailFoldingStyle::DataWithoutLaneMask;
   }
 
@@ -438,6 +435,7 @@ public:
 
   std::optional<unsigned> getMaxVScale() const { return std::nullopt; }
   std::optional<unsigned> getVScaleForTuning() const { return std::nullopt; }
+  bool isVScaleKnownToBeAPowerOfTwo() const { return false; }
 
   bool
   shouldMaximizeVectorBandwidth(TargetTransformInfo::RegisterKind K) const {
@@ -498,6 +496,14 @@ public:
       TTI::OperandValueInfo Opd1Info, TTI::OperandValueInfo Opd2Info,
       ArrayRef<const Value *> Args,
       const Instruction *CxtI = nullptr) const {
+    // Widenable conditions will eventually lower into constants, so some
+    // operations with them will be trivially optimized away.
+    auto IsWidenableCondition = [](const Value *V) {
+      if (auto *II = dyn_cast<IntrinsicInst>(V))
+        if (II->getIntrinsicID() == Intrinsic::experimental_widenable_condition)
+          return true;
+      return false;
+    };
     // FIXME: A number of transformation tests seem to require these values
     // which seems a little odd for how arbitary there are.
     switch (Opcode) {
@@ -511,6 +517,11 @@ public:
     case Instruction::URem:
       // FIXME: Unlikely to be true for CodeSize.
       return TTI::TCC_Expensive;
+    case Instruction::And:
+    case Instruction::Or:
+      if (any_of(Args, IsWidenableCondition))
+        return TTI::TCC_Free;
+      break;
     }
 
     // Assume a 3cy latency for fp arithmetic ops.
@@ -653,6 +664,7 @@ public:
     case Intrinsic::sideeffect:
     case Intrinsic::pseudoprobe:
     case Intrinsic::arithmetic_fence:
+    case Intrinsic::dbg_assign:
     case Intrinsic::dbg_declare:
     case Intrinsic::dbg_value:
     case Intrinsic::dbg_label:
@@ -679,6 +691,7 @@ public:
     case Intrinsic::coro_suspend:
     case Intrinsic::coro_subfn_addr:
     case Intrinsic::threadlocal_address:
+    case Intrinsic::experimental_widenable_condition:
       // These intrinsics don't actually represent code after lowering.
       return 0;
     }
@@ -706,13 +719,14 @@ public:
   }
 
   InstructionCost getMinMaxReductionCost(VectorType *, VectorType *, bool,
+                                         FastMathFlags,
                                          TTI::TargetCostKind) const {
     return 1;
   }
 
   InstructionCost getExtendedReductionCost(unsigned Opcode, bool IsUnsigned,
                                            Type *ResTy, VectorType *Ty,
-                                           std::optional<FastMathFlags> FMF,
+                                           FastMathFlags FMF,
                                            TTI::TargetCostKind CostKind) const {
     return 1;
   }
@@ -863,6 +877,8 @@ public:
   }
 
   bool hasArmWideBranch(bool) const { return false; }
+
+  unsigned getMaxNumArgs() const { return UINT_MAX; }
 
 protected:
   // Obtain the minimum required size to hold the value (without the sign)
@@ -1020,6 +1036,42 @@ public:
             Ptr->getType()->getPointerAddressSpace()))
       return TTI::TCC_Free;
     return TTI::TCC_Basic;
+  }
+
+  InstructionCost getPointersChainCost(ArrayRef<const Value *> Ptrs,
+                                       const Value *Base,
+                                       const TTI::PointersChainInfo &Info,
+                                       TTI::TargetCostKind CostKind) {
+    InstructionCost Cost = TTI::TCC_Free;
+    // In the basic model we take into account GEP instructions only
+    // (although here can come alloca instruction, a value, constants and/or
+    // constant expressions, PHIs, bitcasts ... whatever allowed to be used as a
+    // pointer). Typically, if Base is a not a GEP-instruction and all the
+    // pointers are relative to the same base address, all the rest are
+    // either GEP instructions, PHIs, bitcasts or constants. When we have same
+    // base, we just calculate cost of each non-Base GEP as an ADD operation if
+    // any their index is a non-const.
+    // If no known dependecies between the pointers cost is calculated as a sum
+    // of costs of GEP instructions.
+    for (const Value *V : Ptrs) {
+      const auto *GEP = dyn_cast<GetElementPtrInst>(V);
+      if (!GEP)
+        continue;
+      if (Info.isSameBase() && V != Base) {
+        if (GEP->hasAllConstantIndices())
+          continue;
+        Cost += static_cast<T *>(this)->getArithmeticInstrCost(
+            Instruction::Add, GEP->getType(), CostKind,
+            {TTI::OK_AnyValue, TTI::OP_None}, {TTI::OK_AnyValue, TTI::OP_None},
+            std::nullopt);
+      } else {
+        SmallVector<const Value *> Indices(GEP->indices());
+        Cost += static_cast<T *>(this)->getGEPCost(GEP->getSourceElementType(),
+                                                   GEP->getPointerOperand(),
+                                                   Indices, CostKind);
+      }
+    }
+    return Cost;
   }
 
   InstructionCost getInstructionCost(const User *U,

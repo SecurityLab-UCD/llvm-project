@@ -98,6 +98,10 @@ TEST(OperationsTest, SourcePreds) {
       ConstantPointerNull::get(PointerType::get(i32->getType(), 0));
   Constant *v8p0i32 =
       ConstantVector::getSplat(ElementCount::getFixed(8), p0i32);
+  Constant *vni32 = ConstantVector::getSplat(ElementCount::getScalable(8), i32);
+  Constant *vnf64 = ConstantVector::getSplat(ElementCount::getScalable(8), f64);
+  Constant *vnp0i32 =
+      ConstantVector::getSplat(ElementCount::getScalable(8), p0i32);
 
   auto OnlyI32 = onlyType(i32->getType());
   EXPECT_TRUE(OnlyI32.matches({}, i32));
@@ -136,6 +140,10 @@ TEST(OperationsTest, SourcePreds) {
   EXPECT_FALSE(AnyIntOrVecInt.matches({}, v4f16));
   EXPECT_TRUE(AnyIntOrVecInt.matches({}, v8i8));
   EXPECT_FALSE(AnyIntOrVecInt.matches({}, v4f16));
+  EXPECT_FALSE(AnyIntOrVecInt.matches({}, v8p0i32));
+  EXPECT_TRUE(AnyIntOrVecInt.matches({}, vni32));
+  EXPECT_FALSE(AnyIntOrVecInt.matches({}, vnf64));
+  EXPECT_FALSE(AnyIntOrVecInt.matches({}, vnp0i32));
 
   EXPECT_THAT(AnyIntOrVecInt.generate({}, {v8i8->getType()}),
               AllOf(Each(TypesMatch(v8i8))));
@@ -147,6 +155,10 @@ TEST(OperationsTest, SourcePreds) {
   EXPECT_FALSE(BoolOrVecBool.matches({}, v4f16));
   EXPECT_TRUE(BoolOrVecBool.matches({}, v8i1));
   EXPECT_FALSE(BoolOrVecBool.matches({}, v4f16));
+  EXPECT_FALSE(BoolOrVecBool.matches({}, v8p0i32));
+  EXPECT_FALSE(BoolOrVecBool.matches({}, vni32));
+  EXPECT_FALSE(BoolOrVecBool.matches({}, vnf64));
+  EXPECT_FALSE(BoolOrVecBool.matches({}, vnp0i32));
 
   EXPECT_THAT(BoolOrVecBool.generate({}, {v8i8->getType(), v8i1->getType()}),
               AllOf(Each(TypesMatch(v8i1))));
@@ -168,6 +180,10 @@ TEST(OperationsTest, SourcePreds) {
   EXPECT_FALSE(AnyFPOrVecFP.matches({}, i16));
   EXPECT_FALSE(AnyFPOrVecFP.matches({}, p0i32));
   EXPECT_TRUE(AnyFPOrVecFP.matches({}, v4f16));
+  EXPECT_FALSE(AnyFPOrVecFP.matches({}, v8p0i32));
+  EXPECT_FALSE(AnyFPOrVecFP.matches({}, vni32));
+  EXPECT_TRUE(AnyFPOrVecFP.matches({}, vnf64));
+  EXPECT_FALSE(AnyFPOrVecFP.matches({}, vnp0i32));
 
   EXPECT_THAT(AnyFPOrVecFP.generate(
                   {}, {i32->getType(), f16->getType(), v8i8->getType()}),
@@ -180,6 +196,8 @@ TEST(OperationsTest, SourcePreds) {
   EXPECT_FALSE(AnyPtr.matches({}, i8));
   EXPECT_FALSE(AnyPtr.matches({}, a));
   EXPECT_FALSE(AnyPtr.matches({}, v8i8));
+  EXPECT_FALSE(AnyPtr.matches({}, v8p0i32));
+  EXPECT_FALSE(AnyPtr.matches({}, vni32));
 
   auto isPointer = [](Value *V) { return V->getType()->isPointerTy(); };
   EXPECT_THAT(
@@ -192,6 +210,10 @@ TEST(OperationsTest, SourcePreds) {
   EXPECT_FALSE(AnyVec.matches({}, i8));
   EXPECT_FALSE(AnyVec.matches({}, a));
   EXPECT_FALSE(AnyVec.matches({}, s));
+  EXPECT_TRUE(AnyVec.matches({}, v8p0i32));
+  EXPECT_TRUE(AnyVec.matches({}, vni32));
+  EXPECT_TRUE(AnyVec.matches({}, vnf64));
+  EXPECT_TRUE(AnyVec.matches({}, vnp0i32));
 
   EXPECT_THAT(AnyVec.generate({}, {v8i8->getType()}), Each(TypesMatch(v8i8)));
 
@@ -360,13 +382,12 @@ TEST(OperationsTest, GEPPointerOperand) {
   // Check that we only pick sized pointers for the GEP instructions
 
   LLVMContext Ctx;
-  const char *SourceCode =
-      "%opaque = type opaque\n"
-      "declare void @f()\n"
-      "define void @test(%opaque %o) {\n"
-      "  %a = alloca i64, i32 10\n"
-      "  ret void\n"
-      "}";
+  const char *SourceCode = "%opaque = type opaque\n"
+                           "declare void @f()\n"
+                           "define void @test(%opaque %o) {\n"
+                           "  %a = alloca i64, i32 10\n"
+                           "  ret void\n"
+                           "}";
   auto M = parseAssembly(SourceCode, Ctx);
 
   fuzzerop::OpDescriptor Descr = fuzzerop::gepDescriptor(1);

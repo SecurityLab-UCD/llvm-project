@@ -132,6 +132,18 @@ struct DenormalMode {
            Input != DenormalModeKind::Invalid;
   }
 
+  /// Return true if input denormals must be implicitly treated as 0.
+  constexpr bool inputsAreZero() const {
+    return Input == DenormalModeKind::PreserveSign ||
+           Input == DenormalModeKind::PositiveZero;
+  }
+
+  /// Return true if output denormals should be flushed to 0.
+  constexpr bool outputsAreZero() const {
+    return Output == DenormalModeKind::PreserveSign ||
+           Output == DenormalModeKind::PositiveZero;
+  }
+
   inline void print(raw_ostream &OS) const;
 
   inline std::string str() const {
@@ -217,10 +229,22 @@ enum FPClassTest : unsigned {
   fcPosFinite = fcPosNormal | fcPosSubnormal | fcPosZero,
   fcNegFinite = fcNegNormal | fcNegSubnormal | fcNegZero,
   fcFinite = fcPosFinite | fcNegFinite,
+  fcPositive = fcPosFinite | fcPosInf,
+  fcNegative = fcNegFinite | fcNegInf,
+
   fcAllFlags = fcNan | fcInf | fcFinite,
 };
 
 LLVM_DECLARE_ENUM_AS_BITMASK(FPClassTest, /* LargestValue */ fcPosInf);
+
+/// Return the test mask which returns true if the value's sign bit is flipped.
+FPClassTest fneg(FPClassTest Mask);
+
+/// Return the test mask which returns true if the value's sign bit is cleared.
+FPClassTest fabs(FPClassTest Mask);
+
+/// Write a human readable form of \p Mask to \p OS
+raw_ostream &operator<<(raw_ostream &OS, FPClassTest Mask);
 
 } // namespace llvm
 

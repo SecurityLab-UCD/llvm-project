@@ -121,7 +121,7 @@ public:
 /// Strategy that generates new function calls and inserts function signatures
 /// to the modules. If any signatures are present in the module it will be
 /// called.
-class FunctionIRStrategy : public IRMutationStrategy {
+class InsertFunctionStrategy : public IRMutationStrategy {
 public:
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
                      uint64_t CurrentWeight) override {

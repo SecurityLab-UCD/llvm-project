@@ -339,10 +339,14 @@ void baremetal::Linker::ConstructJob(Compilation &C, const JobAction &JA,
     TC.AddLinkRuntimeLib(Args, CmdArgs);
   }
 
+  if (TC.getTriple().isRISCV())
+    CmdArgs.push_back("-X");
+
   CmdArgs.push_back("-o");
   CmdArgs.push_back(Output.getFilename());
 
-  C.addCommand(std::make_unique<Command>(JA, *this, ResponseFileSupport::None(),
+  C.addCommand(std::make_unique<Command>(JA, *this,
+                                         ResponseFileSupport::AtFileCurCP(),
                                          Args.MakeArgString(TC.GetLinkerPath()),
                                          CmdArgs, Inputs, Output));
 }
