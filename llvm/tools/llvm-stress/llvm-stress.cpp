@@ -93,7 +93,7 @@ auto createCustomMutator() {
       InjectorIRStrategy::getDefaultOps()));
   Strategies.push_back(std::make_unique<InstDeleterIRStrategy>());
   Strategies.push_back(std::make_unique<InstModificationIRStrategy>());
-  Strategies.push_back(std::make_unique<FunctionIRStrategy>());
+  Strategies.push_back(std::make_unique<InsertFunctionStrategy>());
   Strategies.push_back(std::make_unique<InsertCFGStrategy>());
   Strategies.push_back(std::make_unique<InsertPHIStrategy>());
   Strategies.push_back(std::make_unique<SinkInstructionStrategy>());
