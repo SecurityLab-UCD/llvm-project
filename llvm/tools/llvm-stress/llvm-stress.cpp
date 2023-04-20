@@ -152,7 +152,7 @@ int main(int argc, char **argv) {
   LLVMContext Context;
   std::unique_ptr<Module> M;
   if (!InputFilename.empty()) {
-    auto Diagnostic = SMDiagnostic();
+    SMDiagnostic Diagnostic;
     M = parseIRFile(InputFilename, Diagnostic, Context);
     if (!M) {
       Diagnostic.print(argv[0], errs());
@@ -199,7 +199,7 @@ int main(int argc, char **argv) {
     report_fatal_error("Broken module found, compilation aborted!");
 
   // If extension matches, output bitcode
-  if (StringRef(OutputFilename.getValue()).ends_with_insensitive(".bc")) {
+  if (StringRef(OutputFilename).ends_with_insensitive(".bc")) {
     WriteBitcodeToFile(*M, Out->os());
   } else { // defaults to textual IR
     M->print(Out->os(), nullptr);
