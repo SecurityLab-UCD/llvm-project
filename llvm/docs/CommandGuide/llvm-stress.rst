@@ -32,8 +32,8 @@ OPTIONS
 
 .. option:: -repeat times
 
- Specify the number of times to mutate. The repeat count must be at
- least 1. Defaults to 100 times.
+ Specify the number of times to mutate. The repeat count must be at least 1.
+ Defaults to 100 times.
 
 .. option:: -max-size bytes
 
