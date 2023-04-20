@@ -6,7 +6,7 @@ llvm-stress - generate random .ll files
 SYNOPSIS
 --------
 
-:program:`llvm-stress` [-size=filesize] [-seed=initialseed] [-o=outfile]
+:program:`llvm-stress` [*options*]
 
 DESCRIPTION
 -----------
@@ -19,7 +19,8 @@ OPTIONS
 
 .. option:: -i filename
 
- Specify the input filename for mutating an existing module.
+ Specify the input filename for mutating an existing module (mutation mode).
+ If not specified, defaults to creating a new module (generation mode).
 
 .. option:: -o filename
 
