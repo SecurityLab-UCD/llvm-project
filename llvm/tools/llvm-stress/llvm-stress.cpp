@@ -146,6 +146,7 @@ int main(int argc, char **argv) {
 
   if (RepeatCL == 0) {
     errs() << "Repeat count must be greater than zero.\n";
+    return 1;
   }
 
   LLVMContext Context;
@@ -160,6 +161,7 @@ int main(int argc, char **argv) {
   } else {
     M = std::make_unique<Module>("M", Context);
   }
+
   if (M->size() > MaxSizeCL) {
     errs() << "Given module is larger than " << MaxSizeCL << " bytes.\n";
     return 1;
