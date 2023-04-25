@@ -264,6 +264,8 @@ static bool isCompatibleReplacement(const Instruction *I, const Use &Operand,
   case Instruction::CallBr: {
     const CallBase *II = cast<CallBase>(I);
     const Function *Callee = II->getCalledFunction();
+    if (!Callee)
+      return false;
     return !Callee->hasParamAttribute(OperandNo, Attribute::ImmArg);
   }
   default:
