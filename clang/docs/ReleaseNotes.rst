@@ -207,8 +207,8 @@ Improvements to Clang's diagnostics
 - Diagnostic notes and fix-its are now generated for ``ifunc``/``alias`` attributes
   which point to functions whose names are mangled.
 - Diagnostics relating to macros on the command line of a preprocessed assembly
-  file are now reported as coming from the file ``<command line>`` instead of
-  ``<built-in>``.
+  file or precompiled header are now reported as coming from the file
+  ``<command line>`` instead of ``<built-in>``.
 - Clang constexpr evaluator now provides a more concise diagnostic when calling
   function pointer that is known to be null.
 - Clang now avoids duplicate warnings on unreachable ``[[fallthrough]];`` statements
@@ -235,6 +235,8 @@ Improvements to Clang's diagnostics
 Bug Fixes in This Version
 -------------------------
 
+- Fix segfault while running clang-rename on a non existing file.
+  (`#36471 <https://github.com/llvm/llvm-project/issues/36471>`_)
 - Fix crash when diagnosing incorrect usage of ``_Nullable`` involving alias
   templates.
   (`#60344 <https://github.com/llvm/llvm-project/issues/60344>`_)
@@ -321,12 +323,18 @@ Bug Fixes in This Version
   (`#61885 <https://github.com/llvm/llvm-project/issues/61885>`_)
 - Clang constexpr evaluator now treats comparison of [[gnu::weak]]-attributed
   member pointer as an invalid expression.
+- Fix crash when member function contains invalid default argument.
+  (`#62122 <https://github.com/llvm/llvm-project/issues/62122>`_)
 
 Bug Fixes to Compiler Builtins
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 Bug Fixes to Attribute Support
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+- Fixed a bug where attribute annotations on type specifiers (enums, classes,
+  structs, unions, and scoped enums) were not properly ignored, resulting in
+  misleading warning messages. Now, such attribute annotations are correctly
+  ignored. (`#61660 <https://github.com/llvm/llvm-project/issues/61660>`_)
 
 Bug Fixes to C++ Support
 ^^^^^^^^^^^^^^^^^^^^^^^^

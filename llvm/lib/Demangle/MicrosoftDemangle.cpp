@@ -793,6 +793,7 @@ SymbolNode *Demangler::demangleMD5Name(std::string_view &MangledName) {
     return nullptr;
   }
   const char *Start = &*MangledName.begin();
+  const size_t StartSize = MangledName.size();
   MangledName.remove_prefix(MD5Last + 1);
 
   // There are two additional special cases for MD5 names:
@@ -807,7 +808,9 @@ SymbolNode *Demangler::demangleMD5Name(std::string_view &MangledName) {
   //    either.
   consumeFront(MangledName, "??_R4@");
 
-  std::string_view MD5(Start, &*MangledName.begin() - Start);
+  assert(MangledName.size() < StartSize);
+  const size_t Count = StartSize - MangledName.size();
+  std::string_view MD5(Start, Count);
   SymbolNode *S = Arena.alloc<SymbolNode>(NodeKind::Md5Symbol);
   S->Name = synthesizeQualifiedName(Arena, MD5);
 
@@ -2395,14 +2398,13 @@ void Demangler::dumpBackReferences() {
 }
 
 char *llvm::microsoftDemangle(const char *MangledName, size_t *NMangled,
-                              char *Buf, size_t *N,
                               int *Status, MSDemangleFlags Flags) {
   Demangler D;
 
   std::string_view Name{MangledName};
   SymbolNode *AST = D.parse(Name);
   if (!D.Error && NMangled)
-    *NMangled = &*Name.begin() - MangledName;
+    *NMangled = Name.empty() ? 0 : &*Name.begin() - MangledName;
 
   if (Flags & MSDF_DumpBackrefs)
     D.dumpBackReferences();
@@ -2420,14 +2422,13 @@ char *llvm::microsoftDemangle(const char *MangledName, size_t *NMangled,
     OF = OutputFlags(OF | OF_NoVariableType);
 
   int InternalStatus = demangle_success;
+  char *Buf;
   if (D.Error)
     InternalStatus = demangle_invalid_mangled_name;
   else {
-    OutputBuffer OB(Buf, N);
+    OutputBuffer OB;
     AST->output(OB, OF);
     OB += '\0';
-    if (N != nullptr)
-      *N = OB.getCurrentPosition();
     Buf = OB.getBuffer();
   }
 
