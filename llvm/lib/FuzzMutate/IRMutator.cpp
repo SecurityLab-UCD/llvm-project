@@ -45,9 +45,8 @@ void IRMutationStrategy::mutate(Module &M, RandomIRBuilder &IB) {
 }
 
 void IRMutationStrategy::mutate(Function &F, RandomIRBuilder &IB) {
-  auto Range = make_filter_range(
-    make_pointer_range(F),
-    [](BasicBlock *BB) { return !BB->isEHPad(); });
+  auto Range = make_filter_range(make_pointer_range(F),
+                                 [](BasicBlock *BB) { return !BB->isEHPad(); });
 
   mutate(*makeSampler(IB.Rand, Range).getSelection(), IB);
 }
