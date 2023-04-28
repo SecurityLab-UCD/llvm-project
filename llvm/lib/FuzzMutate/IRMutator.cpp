@@ -569,12 +569,12 @@ void SinkInstructionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 }
 
 void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
-  SmallPtrSet<Instruction *, 8> AliveInsts;
+  SmallVector<Instruction *, 8> AliveInsts;
   for (auto &I : make_early_inc_range(make_range(
            BB.getFirstInsertionPt(), BB.getTerminator()->getIterator()))) {
     // First gather all instructions that can be shuffled. Don't take
     // terminator.
-    AliveInsts.insert(&I);
+    AliveInsts.push_back(&I);
     // Then remove these instructions from the block
     I.removeFromParent();
   }
@@ -585,22 +585,22 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   auto hasAliveParent = [&AliveInsts](Instruction *I) {
     for (Value *O : I->operands()) {
       Instruction *P = dyn_cast<Instruction>(O);
-      if (P && AliveInsts.count(P))
+      if (P && std::find(AliveInsts.begin(), AliveInsts.end(), P) != AliveInsts.end())
         return true;
     }
     return false;
   };
   // Get all alive instructions that depend on the current instruction.
   auto getAliveChildren = [&AliveInsts](Instruction *I) {
-    SmallPtrSet<Instruction *, 4> Children;
+    SmallVector<Instruction *, 4> Children;
     for (Value *U : I->users()) {
       Instruction *P = dyn_cast<Instruction>(U);
-      if (P && AliveInsts.count(P))
-        Children.insert(P);
+      if (P && std::find(AliveInsts.begin(), AliveInsts.end(), P) != AliveInsts.end())
+        Children.push_back(P);
     }
     return Children;
   };
-  SmallPtrSet<Instruction *, 8> Roots;
+  SmallSetVector<Instruction *, 8> Roots;
   SmallVector<Instruction *, 8> Insts;
   for (Instruction *I : AliveInsts) {
     if (!hasAliveParent(I))
@@ -612,8 +612,11 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     for (Instruction *Root : Roots)
       RS.sample(Root, 1);
     Instruction *Root = RS.getSelection();
-    Roots.erase(Root);
-    AliveInsts.erase(Root);
+    Roots.remove(Root);
+    auto AIIter = std::find(AliveInsts.begin(), AliveInsts.end(), Root);
+    if (AIIter != AliveInsts.end()) {
+      AliveInsts.erase(AIIter);
+    }
     Insts.push_back(Root);
     for (Instruction *Child : getAliveChildren(Root)) {
       if (!hasAliveParent(Child)) {
