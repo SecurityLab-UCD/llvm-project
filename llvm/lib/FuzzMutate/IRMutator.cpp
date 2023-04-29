@@ -613,10 +613,7 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
       RS.sample(Root, 1);
     Instruction *Root = RS.getSelection();
     Roots.remove(Root);
-    auto AIIter = std::find(AliveInsts.begin(), AliveInsts.end(), Root);
-    if (AIIter != AliveInsts.end()) {
-      AliveInsts.erase(AIIter);
-    }
+    AliveInsts.erase(std::find(AliveInsts.begin(), AliveInsts.end(), Root));
     Insts.push_back(Root);
     for (Instruction *Child : getAliveChildren(Root)) {
       if (!hasAliveParent(Child)) {
