@@ -580,31 +580,33 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   }
 
   // Shuffle these instructions using topological sort.
-  // Returns true if all current instruction's dependencies in this block have
+  // Returns false if all current instruction's dependencies in this block have
   // been shuffled. If so, this instruction can be shuffled too.
   auto hasAliveParent = [&AliveInsts](Instruction *I) {
     for (Value *O : I->operands()) {
       Instruction *P = dyn_cast<Instruction>(O);
-      if (P && std::find(AliveInsts.begin(), AliveInsts.end(), P) != AliveInsts.end())
+      if (P && std::find(AliveInsts.begin(), AliveInsts.end(), P) !=
+                   AliveInsts.end())
         return true;
     }
     return false;
   };
   // Get all alive instructions that depend on the current instruction.
   auto getAliveChildren = [&AliveInsts](Instruction *I) {
-    SmallVector<Instruction *, 4> Children;
+    SmallSetVector<Instruction *, 4> Children;
     for (Value *U : I->users()) {
       Instruction *P = dyn_cast<Instruction>(U);
-      if (P && std::find(AliveInsts.begin(), AliveInsts.end(), P) != AliveInsts.end())
-        Children.push_back(P);
+      if (P && std::find(AliveInsts.begin(), AliveInsts.end(), P) !=
+                   AliveInsts.end())
+        Children.insert(P);
     }
     return Children;
   };
-  SmallSetVector<Instruction *, 8> Roots;
+  SmallVector<Instruction *, 8> Roots;
   SmallVector<Instruction *, 8> Insts;
   for (Instruction *I : AliveInsts) {
     if (!hasAliveParent(I))
-      Roots.insert(I);
+      Roots.push_back(I);
   }
   // Topological sort by randomly selecting a node without a parent, or root.
   while (!Roots.empty()) {
@@ -612,12 +614,12 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     for (Instruction *Root : Roots)
       RS.sample(Root, 1);
     Instruction *Root = RS.getSelection();
-    Roots.remove(Root);
+    Roots.erase(std::find(Roots.begin(), Roots.end(), Root));
     AliveInsts.erase(std::find(AliveInsts.begin(), AliveInsts.end(), Root));
     Insts.push_back(Root);
     for (Instruction *Child : getAliveChildren(Root)) {
       if (!hasAliveParent(Child)) {
-        Roots.insert(Child);
+        Roots.push_back(Child);
       }
     }
   }
