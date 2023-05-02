@@ -70,7 +70,8 @@ public:
       : AllowedTypes(std::move(AllowedTypes)),
         Strategies(std::move(Strategies)) {}
 
-  void mutateModule(Module &M, int Seed, size_t CurSize, size_t MaxSize);
+  static size_t getModuleSize(const Module &M);
+  void mutateModule(Module &M, int Seed, size_t MaxSize);
 };
 
 /// Strategy that injects operations into the function.
