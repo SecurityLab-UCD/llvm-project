@@ -574,13 +574,13 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   // performance.
   std::map<size_t, Instruction *> AliveInsts;
   std::map<Instruction *, size_t> AliveInstsLookup;
-  size_t InsertIndex = 0;
+  size_t InsertIdx = 0;
   for (auto &I : make_early_inc_range(make_range(
            BB.getFirstInsertionPt(), BB.getTerminator()->getIterator()))) {
     // First gather all instructions that can be shuffled. Don't take
     // terminator.
-    AliveInsts.insert({InsertIndex, &I});
-    AliveInstsLookup.insert({&I, InsertIndex++});
+    AliveInsts.insert({InsertIdx, &I});
+    AliveInstsLookup.insert({&I, InsertIdx++});
     // Then remove these instructions from the block
     I.removeFromParent();
   }
@@ -591,9 +591,7 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   auto hasAliveParent = [&AliveInsts, &AliveInstsLookup](size_t Index) {
     for (Value *O : AliveInsts[Index]->operands()) {
       Instruction *P = dyn_cast<Instruction>(O);
-      if (!P)
-        continue;
-      if (auto AI = AliveInstsLookup.find(P); AI != AliveInstsLookup.end())
+      if (P && AliveInstsLookup.count(P))
         return true;
     }
     return false;
@@ -605,27 +603,25 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     SmallSetVector<size_t, 8> Children;
     for (Value *U : I->users()) {
       Instruction *P = dyn_cast<Instruction>(U);
-      if (!P)
-        continue;
-      if (auto AI = AliveInstsLookup.find(P); AI != AliveInstsLookup.end())
-        Children.insert(AI->second);
+      if (P && AliveInstsLookup.count(P))
+        Children.insert(AliveInstsLookup[P]);
     }
     return Children;
   };
-  SmallSet<size_t, 8> Roots;
+  SmallSet<size_t, 8> RootIndices;
   SmallVector<Instruction *, 8> Insts;
   for (const auto &[Index, Inst] : AliveInsts) {
     if (!hasAliveParent(Index))
-      Roots.insert(Index);
+      RootIndices.insert(Index);
   }
   // Topological sort by randomly selecting a node without a parent, or root.
-  while (!Roots.empty()) {
+  while (!RootIndices.empty()) {
     auto RS = makeSampler<size_t>(IB.Rand);
-    for (auto RootIdx : Roots)
+    for (size_t RootIdx : RootIndices)
       RS.sample(RootIdx, 1);
     size_t RootIdx = RS.getSelection();
 
-    Roots.erase(RootIdx);
+    RootIndices.erase(RootIdx);
     Instruction *Root = AliveInsts[RootIdx];
     AliveInsts.erase(RootIdx);
     AliveInstsLookup.erase(Root);
@@ -633,7 +629,7 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 
     for (size_t Child : getAliveChildren(Root)) {
       if (!hasAliveParent(Child)) {
-        Roots.insert(Child);
+        RootIndices.insert(Child);
       }
     }
   }
