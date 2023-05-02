@@ -178,7 +178,7 @@ int main(int argc, char **argv) {
   srand(Seed);
   auto Mutator = createCustomMutator();
   for (unsigned i = 0; i < RepeatCL; i++) {
-    Mutator->mutateModule(*M, rand(), M->size(), MaxSizeCL);
+    Mutator->mutateModule(*M, rand(), MaxSizeCL);
   }
 
   // Figure out what stream we are supposed to write to...
