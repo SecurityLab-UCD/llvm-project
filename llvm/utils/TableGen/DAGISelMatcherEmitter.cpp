@@ -21,8 +21,12 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/Format.h"
+#include "llvm/Support/JSON.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/TableGen/Error.h"
 #include "llvm/TableGen/Record.h"
 
@@ -45,6 +49,11 @@ static cl::opt<bool> InstrumentCoverage(
     "instrument-coverage",
     cl::desc("Generates tables to help identify patterns matched"),
     cl::init(false), cl::cat(DAGISelCat));
+
+static cl::opt<std::string> PatternLookup(
+    "pattern-lookup",
+    cl::desc("Generates a matcher table index-to-pattern lookup table"),
+    cl::init(""), cl::value_desc("filename"), cl::cat(DAGISelCat));
 
 namespace {
 class MatcherTableEmitter {
@@ -71,6 +80,8 @@ class MatcherTableEmitter {
 
   std::vector<std::string> VecIncludeStrings;
   MapVector<std::string, unsigned, StringMap<unsigned>> VecPatterns;
+  json::Object PatternLookupTable;
+  unsigned LastPatternIdx = 0;
 
   unsigned getPatternIdxFromTable(std::string &&P, std::string &&include_loc) {
     const auto It = VecPatterns.find(P);
@@ -96,6 +107,10 @@ public:
   void EmitHistogram(const Matcher *N, raw_ostream &OS);
 
   void EmitPatternMatchTable(raw_ostream &OS);
+
+  json::Array EmitPatterns();
+
+  json::Object EmitPatternLookupTable();
 
 private:
   void EmitNodePredicatesFunction(const std::vector<TreePredicateFn> &Preds,
@@ -362,6 +377,32 @@ void MatcherTableEmitter::EmitPatternMatchTable(raw_ostream &OS) {
   OS << "\nreturn StringRef(INCLUDE_PATH_TABLE[Index]);";
   OS << "\n}\n";
   EndEmitFunction(OS);
+}
+
+json::Array MatcherTableEmitter::EmitPatterns() {
+  json::Array Patterns;
+
+  assert(isUInt<16>(VecPatterns.size()) &&
+         "Using only 16 bits to encode offset into Pattern Table");
+  assert(VecPatterns.size() == VecIncludeStrings.size() &&
+         "The sizes of Pattern and include vectors should be the same");
+
+  for (const auto &It : VecPatterns) {
+    json::Object Pattern;
+    Pattern["pattern"] = It.first;
+    Patterns.push_back(json::Value(std::move(Pattern)));
+  }
+
+  for (size_t i = 0; i < Patterns.size(); i++) {
+    (*Patterns[i].getAsObject())["path"] = VecIncludeStrings[i];
+  }
+
+  return Patterns;
+}
+
+json::Object MatcherTableEmitter::EmitPatternLookupTable() {
+  PatternLookupTable["patterns"] = json::Value(EmitPatterns());
+  return PatternLookupTable;
 }
 
 /// EmitMatcher - Emit bytes for the specified matcher and return
@@ -749,20 +790,24 @@ unsigned MatcherTableEmitter::EmitMatcher(const Matcher *N,
   case Matcher::EmitNode:
   case Matcher::MorphNodeTo: {
     auto NumCoveredBytes = 0;
-    if (InstrumentCoverage) {
+    if (InstrumentCoverage || PatternLookup.getNumOccurrences()) {
       if (const MorphNodeToMatcher *SNT = dyn_cast<MorphNodeToMatcher>(N)) {
-        NumCoveredBytes = 3;
-        OS << "OPC_Coverage, ";
+        if (InstrumentCoverage) {
+          NumCoveredBytes = 3;
+          OS << "OPC_Coverage, ";
+        }
         std::string src =
             GetPatFromTreePatternNode(SNT->getPattern().getSrcPattern());
         std::string dst =
             GetPatFromTreePatternNode(SNT->getPattern().getDstPattern());
         Record *PatRecord = SNT->getPattern().getSrcRecord();
         std::string include_src = getIncludePath(PatRecord);
-        unsigned Offset =
+        LastPatternIdx =
             getPatternIdxFromTable(src + " -> " + dst, std::move(include_src));
-        OS << "TARGET_VAL(" << Offset << "),\n";
-        OS.indent(FullIndexWidth + Indent);
+        if (InstrumentCoverage) {
+          OS << "TARGET_VAL(" << LastPatternIdx << "),\n";
+          OS.indent(FullIndexWidth + Indent);
+        }
       }
     }
     const EmitNodeMatcherCommon *EN = cast<EmitNodeMatcherCommon>(N);
@@ -834,19 +879,23 @@ unsigned MatcherTableEmitter::EmitMatcher(const Matcher *N,
   case Matcher::CompleteMatch: {
     const CompleteMatchMatcher *CM = cast<CompleteMatchMatcher>(N);
     auto NumCoveredBytes = 0;
-    if (InstrumentCoverage) {
-      NumCoveredBytes = 3;
-      OS << "OPC_Coverage, ";
+    if (InstrumentCoverage || PatternLookup.getNumOccurrences()) {
+      if (InstrumentCoverage) {
+        NumCoveredBytes = 3;
+        OS << "OPC_Coverage, ";
+      }
       std::string src =
           GetPatFromTreePatternNode(CM->getPattern().getSrcPattern());
       std::string dst =
           GetPatFromTreePatternNode(CM->getPattern().getDstPattern());
       Record *PatRecord = CM->getPattern().getSrcRecord();
       std::string include_src = getIncludePath(PatRecord);
-      unsigned Offset =
+      LastPatternIdx =
           getPatternIdxFromTable(src + " -> " + dst, std::move(include_src));
-      OS << "TARGET_VAL(" << Offset << "),\n";
-      OS.indent(FullIndexWidth + Indent);
+      if (InstrumentCoverage) {
+        OS << "TARGET_VAL(" << LastPatternIdx << "),\n";
+        OS.indent(FullIndexWidth + Indent);
+      }
     }
     OS << "OPC_CompleteMatch, " << CM->getNumResults() << ", ";
     unsigned NumResultBytes = 0;
@@ -875,16 +924,34 @@ unsigned MatcherTableEmitter::EmitMatcherList(const Matcher *N,
                                               unsigned CurrentIdx,
                                               raw_ostream &OS) {
   unsigned Size = 0;
+  std::vector<json::Value> Matchers;
   while (N) {
     if (!OmitComments)
       OS << "/*" << format_decimal(CurrentIdx, IndexWidth) << "*/";
     unsigned MatcherSize = EmitMatcher(N, Indent, CurrentIdx, OS);
+
+    if (PatternLookup.getNumOccurrences()) {
+      json::Object TheMatcher;
+      TheMatcher["index"] = CurrentIdx;
+      TheMatcher["size"] = MatcherSize;
+      TheMatcher["pattern"] = LastPatternIdx;
+      Matchers.push_back(json::Value(std::move(TheMatcher)));
+    }
+
     Size += MatcherSize;
     CurrentIdx += MatcherSize;
 
     // If there are other nodes in this list, iterate to them, otherwise we're
     // done.
     N = N->getNext();
+  }
+  if (PatternLookup.getNumOccurrences()) {
+    if (PatternLookupTable.find("matchers") == PatternLookupTable.end()) {
+      PatternLookupTable["matchers"] = json::Value(json::Array());
+    }
+    auto *ExistingMatchers = PatternLookupTable["matchers"].getAsArray();
+    ExistingMatchers->insert(ExistingMatchers->end(), Matchers.begin(),
+                             Matchers.end());
   }
   return Size;
 }
@@ -1233,6 +1300,22 @@ void llvm::EmitMatcherTable(Matcher *TheMatcher, const CodeGenDAGPatterns &CGP,
 
   if (InstrumentCoverage)
     MatcherEmitter.EmitPatternMatchTable(OS);
+
+  if (PatternLookup.getNumOccurrences()) {
+    std::error_code EC;
+    std::unique_ptr<ToolOutputFile> LookupFile =
+        std::make_unique<ToolOutputFile>(PatternLookup, EC, sys::fs::OF_None);
+    if (EC) {
+      errs() << EC.message() << '\n';
+      report_fatal_error(
+          "Failed to open file for writing pattern lookup table!");
+    }
+    json::Object LookupTable = MatcherEmitter.EmitPatternLookupTable();
+
+    LookupTable["table_size"] = TotalSize + 1;
+    LookupFile->os() << json::Value(std::move(LookupTable));
+    LookupFile->keep();
+  }
 
   // Clean up the preprocessor macros.
   OS << "\n";
