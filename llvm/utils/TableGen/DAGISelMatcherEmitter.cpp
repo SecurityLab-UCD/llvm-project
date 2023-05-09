@@ -80,14 +80,24 @@ class MatcherTableEmitter {
 
   std::vector<std::string> VecIncludeStrings;
   MapVector<std::string, unsigned, StringMap<unsigned>> VecPatterns;
+  std::vector<std::vector<std::string>> VecPredicates;
   json::Object PatternLookupTable;
   unsigned LastPatternIdx = 0;
 
-  unsigned getPatternIdxFromTable(std::string &&P, std::string &&include_loc) {
+  unsigned getPatternIdxFromTable(std::string &&P, std::string &&include_loc,
+                                  const SmallVectorImpl<Record *> &predicates) {
     const auto It = VecPatterns.find(P);
     if (It == VecPatterns.end()) {
       VecPatterns.insert(make_pair(std::move(P), VecPatterns.size()));
       VecIncludeStrings.push_back(std::move(include_loc));
+      std::vector<std::string> PredicateStrings;
+      for (Record *Pred : predicates) {
+        std::string PredStr;
+        raw_string_ostream OS(PredStr);
+        OS << *Pred;
+        PredicateStrings.push_back(PredStr);
+      }
+      VecPredicates.push_back(std::move(PredicateStrings));
       return VecIncludeStrings.size() - 1;
     }
     return It->second;
@@ -386,6 +396,8 @@ json::Array MatcherTableEmitter::EmitPatterns() {
          "Using only 16 bits to encode offset into Pattern Table");
   assert(VecPatterns.size() == VecIncludeStrings.size() &&
          "The sizes of Pattern and include vectors should be the same");
+  assert(VecPatterns.size() == VecPredicates.size() &&
+         "The sizes of Pattern and Predicate vectors should be the same");
 
   for (const auto &It : VecPatterns) {
     json::Object Pattern;
@@ -395,6 +407,7 @@ json::Array MatcherTableEmitter::EmitPatterns() {
 
   for (size_t i = 0; i < Patterns.size(); i++) {
     (*Patterns[i].getAsObject())["path"] = VecIncludeStrings[i];
+    (*Patterns[i].getAsObject())["predicates"] = VecPredicates[i];
   }
 
   return Patterns;
@@ -802,8 +815,10 @@ unsigned MatcherTableEmitter::EmitMatcher(const Matcher *N,
             GetPatFromTreePatternNode(SNT->getPattern().getDstPattern());
         Record *PatRecord = SNT->getPattern().getSrcRecord();
         std::string include_src = getIncludePath(PatRecord);
-        LastPatternIdx =
-            getPatternIdxFromTable(src + " -> " + dst, std::move(include_src));
+        SmallVector<Record *, 8> PredicateRecords;
+        SNT->getPattern().getPredicateRecords(PredicateRecords);
+        LastPatternIdx = getPatternIdxFromTable(
+            src + " -> " + dst, std::move(include_src), PredicateRecords);
         if (InstrumentCoverage) {
           OS << "TARGET_VAL(" << LastPatternIdx << "),\n";
           OS.indent(FullIndexWidth + Indent);
@@ -890,8 +905,10 @@ unsigned MatcherTableEmitter::EmitMatcher(const Matcher *N,
           GetPatFromTreePatternNode(CM->getPattern().getDstPattern());
       Record *PatRecord = CM->getPattern().getSrcRecord();
       std::string include_src = getIncludePath(PatRecord);
-      LastPatternIdx =
-          getPatternIdxFromTable(src + " -> " + dst, std::move(include_src));
+      SmallVector<Record *, 8> PredicateRecords;
+      CM->getPattern().getPredicateRecords(PredicateRecords);
+      LastPatternIdx = getPatternIdxFromTable(
+          src + " -> " + dst, std::move(include_src), PredicateRecords);
       if (InstrumentCoverage) {
         OS << "TARGET_VAL(" << LastPatternIdx << "),\n";
         OS.indent(FullIndexWidth + Indent);
