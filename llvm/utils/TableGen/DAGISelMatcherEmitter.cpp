@@ -80,9 +80,20 @@ class MatcherTableEmitter {
 
   std::vector<std::string> VecIncludeStrings;
   MapVector<std::string, unsigned, StringMap<unsigned>> VecPatterns;
-  std::vector<std::vector<std::string>> VecPredicates;
+  std::vector<std::vector<unsigned>> VecPredicateIndices;
+  std::vector<std::string> VecPredicateStrings;
   json::Object PatternLookupTable;
   unsigned LastPatternIdx = 0;
+
+  unsigned getPredicateIdx(const std::string &predicate) {
+    const auto It = std::find(VecPredicateStrings.begin(),
+                              VecPredicateStrings.end(), predicate);
+    if (It == VecPredicateStrings.end()) {
+      VecPredicateStrings.push_back(predicate);
+      return VecPredicateStrings.size() - 1;
+    }
+    return std::distance(VecPredicateStrings.begin(), It);
+  }
 
   unsigned getPatternIdxFromTable(std::string &&P, std::string &&include_loc,
                                   const SmallVectorImpl<Record *> &predicates) {
@@ -90,14 +101,14 @@ class MatcherTableEmitter {
     if (It == VecPatterns.end()) {
       VecPatterns.insert(make_pair(std::move(P), VecPatterns.size()));
       VecIncludeStrings.push_back(std::move(include_loc));
-      std::vector<std::string> PredicateStrings;
+      std::vector<unsigned> PredicateIndices;
       for (Record *Pred : predicates) {
         std::string PredStr;
         raw_string_ostream OS(PredStr);
         OS << *Pred;
-        PredicateStrings.push_back(PredStr);
+        PredicateIndices.push_back(getPredicateIdx(PredStr));
       }
-      VecPredicates.push_back(std::move(PredicateStrings));
+      VecPredicateIndices.push_back(std::move(PredicateIndices));
       return VecIncludeStrings.size() - 1;
     }
     return It->second;
@@ -396,7 +407,7 @@ json::Array MatcherTableEmitter::EmitPatterns() {
          "Using only 16 bits to encode offset into Pattern Table");
   assert(VecPatterns.size() == VecIncludeStrings.size() &&
          "The sizes of Pattern and include vectors should be the same");
-  assert(VecPatterns.size() == VecPredicates.size() &&
+  assert(VecPatterns.size() == VecPredicateIndices.size() &&
          "The sizes of Pattern and Predicate vectors should be the same");
 
   for (const auto &It : VecPatterns) {
@@ -407,7 +418,7 @@ json::Array MatcherTableEmitter::EmitPatterns() {
 
   for (size_t i = 0; i < Patterns.size(); i++) {
     (*Patterns[i].getAsObject())["path"] = VecIncludeStrings[i];
-    (*Patterns[i].getAsObject())["predicates"] = VecPredicates[i];
+    (*Patterns[i].getAsObject())["predicates"] = VecPredicateIndices[i];
   }
 
   return Patterns;
@@ -415,6 +426,7 @@ json::Array MatcherTableEmitter::EmitPatterns() {
 
 json::Object MatcherTableEmitter::EmitPatternLookupTable() {
   PatternLookupTable["patterns"] = json::Value(EmitPatterns());
+  PatternLookupTable["predicates"] = json::Value(VecPredicateStrings);
   return PatternLookupTable;
 }
 
