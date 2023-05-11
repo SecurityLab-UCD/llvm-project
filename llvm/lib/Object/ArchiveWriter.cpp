@@ -34,6 +34,7 @@
 #include "llvm/Support/SmallVectorMemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cerrno>
 #include <map>
 
 #if !defined(_MSC_VER) && !defined(__MINGW32__)
@@ -76,9 +77,11 @@ object::Archive::Kind NewArchiveMember::detectKindFromObject() const {
     if (auto ObjOrErr = object::SymbolicFile::createSymbolicFile(
             MemBufferRef, file_magic::bitcode, &Context)) {
       auto &IRObject = cast<object::IRObjectFile>(**ObjOrErr);
-      return Triple(IRObject.getTargetTriple()).isOSDarwin()
+      auto TargetTriple = Triple(IRObject.getTargetTriple());
+      return TargetTriple.isOSDarwin()
                  ? object::Archive::K_DARWIN
-                 : object::Archive::K_GNU;
+                 : (TargetTriple.isOSAIX() ? object::Archive::K_AIXBIG
+                                           : object::Archive::K_GNU);
     } else {
       // Squelch the error in case this was not a SymbolicFile.
       consumeError(ObjOrErr.takeError());

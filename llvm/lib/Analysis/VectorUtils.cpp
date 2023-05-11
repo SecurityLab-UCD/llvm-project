@@ -444,13 +444,13 @@ void llvm::processShuffleMasks(
       int Idx = I * SzDest + K;
       if (Idx == Sz)
         break;
-      if (Mask[Idx] >= Sz || Mask[Idx] == UndefMaskElem)
+      if (Mask[Idx] >= Sz || Mask[Idx] == PoisonMaskElem)
         continue;
       int SrcRegIdx = Mask[Idx] / SzSrc;
       // Add a cost of PermuteTwoSrc for each new source register permute,
       // if we have more than one source registers.
       if (RegMasks[SrcRegIdx].empty())
-        RegMasks[SrcRegIdx].assign(SzDest, UndefMaskElem);
+        RegMasks[SrcRegIdx].assign(SzDest, PoisonMaskElem);
       RegMasks[SrcRegIdx][K] = Mask[Idx] % SzSrc;
     }
   }
@@ -482,8 +482,8 @@ void llvm::processShuffleMasks(
       auto &&CombineMasks = [](MutableArrayRef<int> FirstMask,
                                ArrayRef<int> SecondMask) {
         for (int Idx = 0, VF = FirstMask.size(); Idx < VF; ++Idx) {
-          if (SecondMask[Idx] != UndefMaskElem) {
-            assert(FirstMask[Idx] == UndefMaskElem &&
+          if (SecondMask[Idx] != PoisonMaskElem) {
+            assert(FirstMask[Idx] == PoisonMaskElem &&
                    "Expected undefined mask element.");
             FirstMask[Idx] = SecondMask[Idx] + VF;
           }
@@ -491,7 +491,7 @@ void llvm::processShuffleMasks(
       };
       auto &&NormalizeMask = [](MutableArrayRef<int> Mask) {
         for (int Idx = 0, VF = Mask.size(); Idx < VF; ++Idx) {
-          if (Mask[Idx] != UndefMaskElem)
+          if (Mask[Idx] != PoisonMaskElem)
             Mask[Idx] = Idx;
         }
       };
@@ -1011,7 +1011,7 @@ bool InterleavedAccessInfo::isStrided(int Stride) {
 
 void InterleavedAccessInfo::collectConstStrideAccesses(
     MapVector<Instruction *, StrideDescriptor> &AccessStrideInfo,
-    const ValueToValueMap &Strides) {
+    const DenseMap<Value*, const SCEV*> &Strides) {
   auto &DL = TheLoop->getHeader()->getModule()->getDataLayout();
 
   // Since it's desired that the load/store instructions be maintained in
@@ -1091,7 +1091,7 @@ void InterleavedAccessInfo::collectConstStrideAccesses(
 void InterleavedAccessInfo::analyzeInterleaving(
                                  bool EnablePredicatedInterleavedMemAccesses) {
   LLVM_DEBUG(dbgs() << "LV: Analyzing interleaved accesses...\n");
-  const ValueToValueMap &Strides = LAI->getSymbolicStrides();
+  const auto &Strides = LAI->getSymbolicStrides();
 
   // Holds all accesses with a constant stride.
   MapVector<Instruction *, StrideDescriptor> AccessStrideInfo;

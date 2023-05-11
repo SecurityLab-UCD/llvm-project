@@ -3265,9 +3265,9 @@ InstructionCost AArch64TTIImpl::getShuffleCost(TTI::ShuffleKind Kind,
       unsigned NumSources = 0;
       for (unsigned E = 0; E < LTNumElts; E++) {
         int MaskElt = (N * LTNumElts + E < TpNumElts) ? Mask[N * LTNumElts + E]
-                                                      : UndefMaskElem;
+                                                      : PoisonMaskElem;
         if (MaskElt < 0) {
-          NMask.push_back(UndefMaskElem);
+          NMask.push_back(PoisonMaskElem);
           continue;
         }
 
@@ -3477,7 +3477,7 @@ InstructionCost AArch64TTIImpl::getShuffleCost(TTI::ShuffleKind Kind,
 
 static bool containsDecreasingPointers(Loop *TheLoop,
                                        PredicatedScalarEvolution *PSE) {
-  const ValueToValueMap &Strides = ValueToValueMap();
+  const auto &Strides = DenseMap<Value *, const SCEV *>();
   for (BasicBlock *BB : TheLoop->blocks()) {
     // Scan the instructions in the block and look for addresses that are
     // consecutive and decreasing.

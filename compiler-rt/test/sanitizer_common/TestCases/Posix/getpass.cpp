@@ -1,7 +1,11 @@
-// RUN: %clangxx -O0 -g %s -lutil -o %t && %run %t | FileCheck %s
+// RUN: %clangxx -O0 -g %s -lutil -o %t
+
+// Ignore leaks as this is not the point of test, but HWASAN repors one here.
+// RUN: %env_tool_opts=detect_leaks=0 %run %t | FileCheck %s
 
 // REQUIRES: stable-runtime
 // XFAIL: android && asan
+
 // No libutil.
 // UNSUPPORTED: target={{.*solaris.*}}
 
@@ -23,8 +27,6 @@
 #endif
 #include <unistd.h>
 
-char *s; // getpass leaks.
-
 int main(int argc, char **argv) {
   int m;
   int pid = forkpty(&m, NULL, NULL, NULL);
@@ -40,7 +42,7 @@ int main(int argc, char **argv) {
     while ((res = read(m, buf, sizeof(buf))) > 0)
       write(1, buf, res);
   } else {
-    s = getpass("prompt");
+    char *s = getpass("prompt");
     assert(strcmp(s, "password") == 0);
     write(1, "done\n", 5);
   }
