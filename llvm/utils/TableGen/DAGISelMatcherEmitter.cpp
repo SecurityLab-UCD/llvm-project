@@ -960,7 +960,9 @@ EmitMatcherList(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
       json::Object TheMatcher;
       TheMatcher["index"] = CurrentIdx;
       TheMatcher["size"] = MatcherSize;
-      TheMatcher["pattern"] = LastPatternIdx;
+      TheMatcher["kind"] = static_cast<int>(N->getKind());
+      if (N->getKind() == Matcher::MorphNodeTo || N->getKind() == Matcher::CompleteMatch)
+        TheMatcher["pattern"] = LastPatternIdx;
       Matchers.push_back(json::Value(std::move(TheMatcher)));
     }
 
