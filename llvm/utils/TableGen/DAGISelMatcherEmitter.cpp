@@ -130,7 +130,11 @@ class MatcherTableEmitter {
 
 public:
   MatcherTableEmitter(const CodeGenDAGPatterns &cgp)
-      : CGP(cgp), OpcodeCounts(Matcher::HighestKind + 1, 0) {}
+      : CGP(cgp), OpcodeCounts(Matcher::HighestKind + 1, 0) {
+    if (PatternLookup.getNumOccurrences()) {
+      PatternLookupTable["matchers"] = json::Value(json::Array());
+    }
+  }
 
   unsigned EmitMatcherList(const Matcher *N, const unsigned Indent,
                            unsigned StartIdx, raw_ostream &OS);
@@ -146,6 +150,29 @@ public:
   json::Array EmitPatterns();
 
   json::Object EmitPatternLookupTable();
+
+  void SaveMatcher(size_t CurrentIdx, size_t MatcherSize,
+                   std::optional<Matcher::KindTy> KindOpt = std::nullopt,
+                   std::optional<size_t> PatternIdx = std::nullopt,
+                   std::optional<size_t> PatPredIdx = std::nullopt) {
+    if (!PatternLookup.getNumOccurrences())
+      return;
+    json::Object TheMatcher;
+    TheMatcher["index"] = CurrentIdx;
+    TheMatcher["size"] = MatcherSize;
+
+    if (KindOpt.has_value()) {
+      Matcher::KindTy Kind = KindOpt.value();
+      TheMatcher["kind"] = static_cast<int>(Kind);
+      if (Kind == Matcher::MorphNodeTo || Kind == Matcher::CompleteMatch)
+        TheMatcher["pattern"] = PatternIdx.value();
+      else if (Kind == Matcher::CheckPatternPredicate)
+        TheMatcher["predicate"] = PatPredIdx.value();
+    }
+
+    auto *ExistingMatchers = PatternLookupTable["matchers"].getAsArray();
+    ExistingMatchers->push_back(json::Value(std::move(TheMatcher)));
+  }
 
 private:
   void EmitNodePredicatesFunction(const std::vector<TreePredicateFn> &Preds,
@@ -485,6 +512,7 @@ EmitMatcher(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
                                   CurrentIdx + VBRSize, OS);
       assert(ChildSize == SM->getChild(i)->getSize() &&
              "Emitted child size does not match calculated size");
+      SaveMatcher(CurrentIdx, VBRSize + ChildSize);
       CurrentIdx += VBRSize + ChildSize;
     }
 
@@ -638,6 +666,7 @@ EmitMatcher(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
       ChildSize = EmitMatcherList(Child, Indent+1, CurrentIdx, OS);
       assert(ChildSize == Child->getSize() &&
              "Emitted child size does not match calculated size");
+      SaveMatcher(CurrentIdx, ChildSize);
       CurrentIdx += ChildSize;
     }
 
@@ -970,18 +999,8 @@ EmitMatcherList(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
     if (!OmitComments)
       OS << "/*" << format_decimal(CurrentIdx, IndexWidth) << "*/";
     unsigned MatcherSize = EmitMatcher(N, Indent, CurrentIdx, OS);
-
-    if (PatternLookup.getNumOccurrences()) {
-      json::Object TheMatcher;
-      TheMatcher["index"] = CurrentIdx;
-      TheMatcher["size"] = MatcherSize;
-      TheMatcher["kind"] = static_cast<int>(N->getKind());
-      if (N->getKind() == Matcher::MorphNodeTo || N->getKind() == Matcher::CompleteMatch)
-        TheMatcher["pattern"] = LastPatternIdx;
-      else if (N->getKind() == Matcher::CheckPatternPredicate)
-        TheMatcher["predicate"] = LastPatternPredicateIdx;
-      Matchers.push_back(json::Value(std::move(TheMatcher)));
-    }
+    SaveMatcher(CurrentIdx, MatcherSize, N->getKind(), LastPatternIdx,
+                LastPatternPredicateIdx);
 
     Size += MatcherSize;
     CurrentIdx += MatcherSize;
@@ -989,14 +1008,6 @@ EmitMatcherList(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
     // If there are other nodes in this list, iterate to them, otherwise we're
     // done.
     N = N->getNext();
-  }
-  if (PatternLookup.getNumOccurrences()) {
-    if (PatternLookupTable.find("matchers") == PatternLookupTable.end()) {
-      PatternLookupTable["matchers"] = json::Value(json::Array());
-    }
-    auto *ExistingMatchers = PatternLookupTable["matchers"].getAsArray();
-    ExistingMatchers->insert(ExistingMatchers->end(), Matchers.begin(),
-                             Matchers.end());
   }
   return Size;
 }
