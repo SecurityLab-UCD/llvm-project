@@ -79,12 +79,25 @@ class MatcherTableEmitter {
   DenseMap<Record*, unsigned> NodeXFormMap;
   std::vector<Record*> NodeXForms;
 
+  // Matcher .td include locations
   std::vector<std::string> VecIncludeStrings;
+  // All pattern strings
   MapVector<std::string, unsigned, StringMap<unsigned> > VecPatterns;
+  // Predicates for all patterns as indices to VecPredicateStrings
   std::vector<std::vector<unsigned>> VecPredicateIndices;
+  // All predicate records as strings
   std::vector<std::string> VecPredicateStrings;
+  // CheckPatternPredicate strings
+  std::vector<std::string> VecPatPredicateStrings;
+
   json::Object PatternLookupTable;
+
+  // If the last matcher was CompleteMatch / MorphNodeTo, then
+  // this is its corresponding pattern's index in VecPatterns.
   unsigned LastPatternIdx = 0;
+
+  // Predicate string (C++ expression) index for CheckPatternPredicate
+  unsigned LastPatternPredicateIdx = 0;
 
   unsigned getPredicateIdx(const std::string &predicate) {
     const auto It = std::find(VecPredicateStrings.begin(),
@@ -430,6 +443,7 @@ json::Array MatcherTableEmitter::EmitPatterns() {
 json::Object MatcherTableEmitter::EmitPatternLookupTable() {
   PatternLookupTable["patterns"] = json::Value(EmitPatterns());
   PatternLookupTable["predicates"] = json::Value(VecPredicateStrings);
+  PatternLookupTable["pat_predicates"] = json::Value(PatternPredicates);
   return PatternLookupTable;
 }
 
@@ -539,7 +553,8 @@ EmitMatcher(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
 
   case Matcher::CheckPatternPredicate: {
     StringRef Pred =cast<CheckPatternPredicateMatcher>(N)->getPredicate();
-    OS << "OPC_CheckPatternPredicate, " << getPatternPredicate(Pred) << ',';
+    OS << "OPC_CheckPatternPredicate, "
+       << (LastPatternPredicateIdx = getPatternPredicate(Pred)) << ',';
     if (!OmitComments)
       OS << " // " << Pred;
     OS << '\n';
@@ -963,6 +978,8 @@ EmitMatcherList(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
       TheMatcher["kind"] = static_cast<int>(N->getKind());
       if (N->getKind() == Matcher::MorphNodeTo || N->getKind() == Matcher::CompleteMatch)
         TheMatcher["pattern"] = LastPatternIdx;
+      else if (N->getKind() == Matcher::CheckPatternPredicate)
+        TheMatcher["predicate"] = LastPatternPredicateIdx;
       Matchers.push_back(json::Value(std::move(TheMatcher)));
     }
 
