@@ -152,7 +152,7 @@ public:
   json::Object EmitPatternLookupTable();
 
   void SaveMatcher(size_t CurrentIdx, size_t MatcherSize,
-                   std::optional<Matcher::KindTy> KindOpt = std::nullopt,
+                   Matcher::KindTy Kind,
                    std::optional<size_t> PatternIdx = std::nullopt,
                    std::optional<size_t> PatPredIdx = std::nullopt) {
     if (!PatternLookup.getNumOccurrences())
@@ -160,15 +160,12 @@ public:
     json::Object TheMatcher;
     TheMatcher["index"] = CurrentIdx;
     TheMatcher["size"] = MatcherSize;
+    TheMatcher["kind"] = static_cast<int>(Kind);
 
-    if (KindOpt.has_value()) {
-      Matcher::KindTy Kind = KindOpt.value();
-      TheMatcher["kind"] = static_cast<int>(Kind);
-      if (Kind == Matcher::MorphNodeTo || Kind == Matcher::CompleteMatch)
-        TheMatcher["pattern"] = PatternIdx.value();
-      else if (Kind == Matcher::CheckPatternPredicate)
-        TheMatcher["predicate"] = PatPredIdx.value();
-    }
+    if (Kind == Matcher::MorphNodeTo || Kind == Matcher::CompleteMatch)
+      TheMatcher["pattern"] = PatternIdx.value();
+    else if (Kind == Matcher::CheckPatternPredicate)
+      TheMatcher["predicate"] = PatPredIdx.value();
 
     auto *ExistingMatchers = PatternLookupTable["matchers"].getAsArray();
     ExistingMatchers->push_back(json::Value(std::move(TheMatcher)));
@@ -512,7 +509,7 @@ EmitMatcher(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
                                   CurrentIdx + VBRSize, OS);
       assert(ChildSize == SM->getChild(i)->getSize() &&
              "Emitted child size does not match calculated size");
-      SaveMatcher(CurrentIdx, VBRSize + ChildSize);
+      SaveMatcher(CurrentIdx, VBRSize + ChildSize, (Matcher::KindTy) (((int)Matcher::HighestKind) + 1));
       CurrentIdx += VBRSize + ChildSize;
     }
 
@@ -666,7 +663,7 @@ EmitMatcher(const Matcher *N, const unsigned Indent, unsigned CurrentIdx,
       ChildSize = EmitMatcherList(Child, Indent+1, CurrentIdx, OS);
       assert(ChildSize == Child->getSize() &&
              "Emitted child size does not match calculated size");
-      SaveMatcher(CurrentIdx, ChildSize);
+      SaveMatcher(CurrentIdx, ChildSize, (Matcher::KindTy) (((int)Matcher::HighestKind) + 1));
       CurrentIdx += ChildSize;
     }
 
