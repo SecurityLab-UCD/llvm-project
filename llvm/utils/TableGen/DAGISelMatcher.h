@@ -52,28 +52,28 @@ class Matcher {
 public:
   enum KindTy {
     // Matcher state manipulation.
-    Scope,                // Push a checking scope.
-    RecordNode,           // Record the current node.
-    RecordChild,          // Record a child of the current node.
-    RecordMemRef,         // Record the memref in the current node.
-    CaptureGlueInput,     // If the current node has an input glue, save it.
-    MoveChild,            // Move current node to specified child.
-    MoveParent,           // Move current node to parent.
+    Scope,            // Push a checking scope.
+    RecordNode,       // Record the current node.
+    RecordChild,      // Record a child of the current node.
+    RecordMemRef,     // Record the memref in the current node.
+    CaptureGlueInput, // If the current node has an input glue, save it.
+    MoveChild,        // Move current node to specified child.
+    MoveParent,       // Move current node to parent.
 
     // Predicate checking.
-    CheckSame,            // Fail if not same as prev match.
-    CheckChildSame,       // Fail if child not same as prev match.
+    CheckSame,      // Fail if not same as prev match.
+    CheckChildSame, // Fail if child not same as prev match.
     CheckPatternPredicate,
-    CheckPredicate,       // Fail if node predicate fails.
-    CheckOpcode,          // Fail if not opcode.
-    SwitchOpcode,         // Dispatch based on opcode.
-    CheckType,            // Fail if not correct type.
-    SwitchType,           // Dispatch based on type.
-    CheckChildType,       // Fail if child has wrong type.
-    CheckInteger,         // Fail if wrong val.
-    CheckChildInteger,    // Fail if child is wrong val.
-    CheckCondCode,        // Fail if not condcode.
-    CheckChild2CondCode,  // Fail if child is wrong condcode.
+    CheckPredicate,      // Fail if node predicate fails.
+    CheckOpcode,         // Fail if not opcode.
+    SwitchOpcode,        // Dispatch based on opcode.
+    CheckType,           // Fail if not correct type.
+    SwitchType,          // Dispatch based on type.
+    CheckChildType,      // Fail if child has wrong type.
+    CheckInteger,        // Fail if wrong val.
+    CheckChildInteger,   // Fail if child is wrong val.
+    CheckCondCode,       // Fail if not condcode.
+    CheckChild2CondCode, // Fail if child is wrong condcode.
     CheckValueType,
     CheckComplexPat,
     CheckAndImm,
@@ -93,6 +93,10 @@ public:
     EmitNodeXForm,        // Run a SDNodeXForm
     CompleteMatch,        // Finish a match and update the results.
     MorphNodeTo,          // Build a node, finish a match and update results.
+
+    Subscope,         // Custom: A child of a scope
+    SwitchTypeCase,   // Custom: A case of SwitchType
+    SwitchOpcodeCase, // Custom: A case of SwitchOpcode
 
     // Highest enum value; watch out when adding more.
     HighestKind = MorphNodeTo

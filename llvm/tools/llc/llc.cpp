@@ -21,6 +21,7 @@
 #include "llvm/CodeGen/MIRParser/MIRParser.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/IR/AutoUpgrade.h"
@@ -189,6 +190,16 @@ static cl::opt<std::string> RemarksFormat(
     "pass-remarks-format",
     cl::desc("The format used for serializing remarks (default: YAML)"),
     cl::value_desc("format"), cl::init("yaml"));
+
+static cl::opt<size_t>
+    PatPredCount("get-pat-pred",
+                 cl::desc("Number of pattern predicates to test"),
+                 cl::value_desc("count"), cl::init(0));
+
+static cl::opt<std::string>
+    PatPredFile("pat-pred-file",
+                 cl::desc("Output pattern predicate bit vector to file"),
+                 cl::value_desc("outfile"), cl::init(""));
 
 namespace {
 
@@ -454,6 +465,20 @@ static bool addPass(PassManagerBase &PM, const char *argv0,
   return false;
 }
 
+class DAGISelGetterPM : public legacy::PassManager {
+public:
+  SelectionDAGISel *DAGISel = nullptr;
+
+  void add(Pass *P) override {
+    if (!DAGISel && P->getPassName().contains_insensitive("dag")) {
+      DAGISel = static_cast<SelectionDAGISel *>(P);
+      DAGISel->PatPredCount = PatPredCount.getValue();
+      DAGISel->PatPredFile = PatPredFile.getValue();
+    }
+    legacy::PassManager::add(P);
+  }
+};
+
 static int compileModule(char **argv, LLVMContext &Context) {
   // Load the module to be compiled...
   SMDiagnostic Err;
@@ -651,7 +676,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
   }
 
   // Build up all of the passes that we want to do to the module.
-  legacy::PassManager PM;
+  DAGISelGetterPM PM;
 
   // Add an appropriate TargetLibraryInfo pass for the module's triple.
   TargetLibraryInfoImpl TLII(Triple(M->getTargetTriple()));
@@ -752,6 +777,10 @@ static int compileModule(char **argv, LLVMContext &Context) {
       CompileTwiceBuffer = Buffer;
       Buffer.clear();
     }
+    if (!PM.DAGISel)
+      report_fatal_error("Could not get DAGISel.");
+
+    assert(PM.DAGISel && "DAGISel pass not added");
 
     PM.run(*M);
 

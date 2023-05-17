@@ -102,6 +102,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
+#include <fstream>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -379,6 +380,42 @@ static void computeUsesMSVCFloatingPoint(const Triple &TT, const Function &F,
   }
 }
 
+bool writeBitVector(const std::vector<bool> &Map, const std::string &FileName) {
+  std::ofstream Ofs(FileName, std::ios::binary);
+  if (!Ofs)
+    return false;
+  unsigned char ByteBuffer = 0;
+  for (size_t I = 0; I < Map.size(); I++) {
+    if (I % 8 == 0 && I) {
+      Ofs << ByteBuffer;
+      ByteBuffer = 0;
+    }
+    if (!Map[I])
+      continue;
+    ByteBuffer |= 1 << (7 - (I % 8));
+  }
+  if (Map.size() % 8 != 0) {
+    Ofs << ByteBuffer;
+  }
+  return Ofs.good();
+}
+
+void SelectionDAGISel::printPatPredicates() {
+  std::vector<bool> PatPreds;
+  if (PatPredFile.size()) {
+    for (size_t i = 0; i < PatPredCount; i++) {
+      PatPreds.push_back(CheckPatternPredicate(i));
+    }
+    writeBitVector(PatPreds, PatPredFile.str());
+    exit(0);
+  }
+  for (size_t i = 0; i < PatPredCount; i++) {
+    outs() << (CheckPatternPredicate(i) ? "1" : "0");
+  }
+  outs() << '\n';
+  exit(0);
+}
+
 bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
   // If we already selected that function, we do not need to run SDISel.
   if (mf.getProperties().hasProperty(
@@ -517,6 +554,8 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
       MRI.clearKillFlags(From);
     MRI.replaceRegWith(From, To);
   }
+  printPatPredicates();
+
 
   // If the first basic block in the function has live ins that need to be
   // copied into vregs, emit the copies into the top of the block before
