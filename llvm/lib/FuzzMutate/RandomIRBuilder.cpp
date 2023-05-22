@@ -27,7 +27,10 @@ using namespace fuzzerop;
 static std::vector<BasicBlock *> getDominators(BasicBlock *BB) {
   std::vector<BasicBlock *> ret;
   DominatorTree DT(*BB->getParent());
-  DomTreeNode *Node = DT[BB]->getIDom();
+  DomTreeNode *Node = DT.getNode(BB);
+  if (!Node)
+    return ret;
+  Node = Node->getIDom();
   while (Node && Node->getBlock()) {
     ret.push_back(Node->getBlock());
     // Get parent block.
@@ -41,7 +44,10 @@ static std::vector<BasicBlock *> getDominators(BasicBlock *BB) {
 static std::vector<BasicBlock *> getDominatees(BasicBlock *BB) {
   DominatorTree DT(*BB->getParent());
   std::vector<BasicBlock *> ret;
-  for (DomTreeNode *Child : DT[BB]->children())
+  DomTreeNode *Parent = DT.getNode(BB);
+  if (!Parent)
+    return ret;
+  for (DomTreeNode *Child : Parent->children())
     ret.push_back(Child->getBlock());
   uint64_t Idx = 0;
   while (Idx < ret.size()) {
