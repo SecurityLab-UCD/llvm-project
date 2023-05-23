@@ -582,9 +582,9 @@ void SinkInstructionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   Instruction *Inst = Insts[Idx];
   // `Idx + 1` so we don't sink to ourselves.
   auto InstsAfter = ArrayRef(Insts).slice(Idx + 1);
-  LLVMContext &C = BB.getParent()->getParent()->getContext();
-  // Don't sink terminators, void function calls, etc.
-  if (Inst->getType() != Type::getVoidTy(C))
+  Type *Ty = Inst->getType();
+  // Don't sink terminators, void function calls, token, etc.
+  if (!Ty->isVoidTy() && !Ty->isTokenTy())
     // Find a new sink and wire up the results of the operation.
     IB.connectToSink(BB, InstsAfter, Inst);
 }
