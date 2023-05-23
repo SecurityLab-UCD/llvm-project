@@ -114,10 +114,15 @@ InjectorIRStrategy::chooseOperation(Value *Src, RandomIRBuilder &IB) {
   return *RS;
 }
 
+inline iterator_range<BasicBlock::iterator> getInsertionRange(BasicBlock &BB) {
+  auto End = BB.getTerminatingMustTailCall() ? std::prev(BB.end()) : BB.end();
+  return make_range(BB.getFirstInsertionPt(), End);
+}
+
 void InjectorIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   SmallVector<Instruction *, 32> Insts;
-  for (auto I = BB.getFirstInsertionPt(), E = BB.end(); I != E; ++I)
-    Insts.push_back(&*I);
+  for (Instruction &I : getInsertionRange(BB))
+    Insts.push_back(&I);
   if (Insts.size() < 1)
     return;
 
@@ -385,7 +390,7 @@ void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   };
 
   SmallVector<Instruction *, 32> Insts;
-  for (Instruction &I : make_range(BB.getFirstInsertionPt(), BB.end()))
+  for (Instruction &I : getInsertionRange(BB))
     Insts.push_back(&I);
   if (Insts.size() < 1)
     return;
@@ -411,7 +416,7 @@ void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 
 void InsertCFGStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   SmallVector<Instruction *, 32> Insts;
-  for (Instruction &I : make_range(BB.getFirstInsertionPt(), BB.end()))
+  for (Instruction &I : getInsertionRange(BB))
     Insts.push_back(&I);
   if (Insts.size() < 1)
     return;
@@ -551,7 +556,7 @@ void InsertPHIStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     PHI->addIncoming(Src, Pred);
   }
   SmallVector<Instruction *, 32> InstsAfter;
-  for (Instruction &I : make_range(BB.getFirstInsertionPt(), BB.end()))
+  for (Instruction &I : getInsertionRange(BB))
     InstsAfter.push_back(&I);
   IB.connectToSink(BB, InstsAfter, PHI);
 }
@@ -563,7 +568,7 @@ void SinkInstructionStrategy::mutate(Function &F, RandomIRBuilder &IB) {
 }
 void SinkInstructionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   SmallVector<Instruction *, 32> Insts;
-  for (Instruction &I : make_range(BB.getFirstInsertionPt(), BB.end()))
+  for (Instruction &I : getInsertionRange(BB))
     Insts.push_back(&I);
   if (Insts.size() < 1)
     return;
