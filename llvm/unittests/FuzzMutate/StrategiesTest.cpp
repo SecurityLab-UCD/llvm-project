@@ -600,6 +600,19 @@ TEST(SinkInstructionStrategy, Operand) {
   mutateAndVerifyModule<SinkInstructionStrategy>(Source);
 }
 
+TEST(SinkInstructionStrategy, DoNotSinkTokenType) {
+  StringRef Source = "\n\
+      declare ptr @fake_personality_function() \n\
+      declare token @llvm.experimental.gc.statepoint.p0(i64 immarg %0, i32 immarg %1, ptr %2, i32 immarg %3, i32 immarg %4, ...) \n\
+      define void @test() gc \"statepoint-example\" personality ptr @fake_personality_function { \n\
+      Entry: \n\
+        %token1 = call token (i64, i32, ptr, i32, i32, ...) \
+          @llvm.experimental.gc.statepoint.p0(i64 0, i32 0, ptr elementtype(ptr addrspace(1) ()) undef, i32 0, i32 0, i32 0, i32 0) \n\
+        ret void \n\
+      }";
+  mutateAndVerifyModule<SinkInstructionStrategy>(Source);
+}
+
 static void VerifyBlockShuffle(StringRef Source) {
   LLVMContext Ctx;
   auto Mutator = createMutator<ShuffleBlockStrategy>();
