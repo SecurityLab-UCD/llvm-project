@@ -114,7 +114,8 @@ InjectorIRStrategy::chooseOperation(Value *Src, RandomIRBuilder &IB) {
   return *RS;
 }
 
-inline iterator_range<BasicBlock::iterator> getInsertionRange(BasicBlock &BB) {
+static inline iterator_range<BasicBlock::iterator>
+getInsertionRange(BasicBlock &BB) {
   auto End = BB.getTerminatingMustTailCall() ? std::prev(BB.end()) : BB.end();
   return make_range(BB.getFirstInsertionPt(), End);
 }
@@ -365,6 +366,10 @@ void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 
   auto RS = makeSampler(IB.Rand, Functions);
   Function *F = RS.getSelection();
+  // Some functions accept metadata type or token type as arguments.
+  // We don't call those functions for now.
+  // For example, `@llvm.dbg.declare(metadata, metadata, metadata)`
+  // https://llvm.org/docs/SourceLevelDebugging.html#llvm-dbg-declare
   auto IsUnsupportedTy = [](Type *T) {
     return T->isMetadataTy() || T->isTokenTy();
   };

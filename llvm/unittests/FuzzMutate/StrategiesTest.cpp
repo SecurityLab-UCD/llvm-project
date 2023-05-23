@@ -129,6 +129,30 @@ TEST(InjectorIRStrategyTest, LargeInsertion) {
   mutateAndVerifyModule(Source, Mutator, 100);
 }
 
+TEST(InjectorIRStrategyTest, InsertWMustTailCall) {
+  StringRef Source = "\n\
+        define i1 @recursive() {    \n\
+        Entry:     \n\
+            %Ret = musttail call i1 @recursive() \n\
+            ret i1 %Ret \n\
+        }";
+  auto Mutator = createInjectorMutator();
+  ASSERT_TRUE(Mutator);
+  mutateAndVerifyModule(Source, Mutator, 100);
+}
+
+TEST(InjectorIRStrategyTest, InsertWTailCall) {
+  StringRef Source = "\n\
+        define i1 @recursive() {    \n\
+        Entry:     \n\
+            %Ret = tail call i1 @recursive() \n\
+            ret i1 %Ret \n\
+        }";
+  auto Mutator = createInjectorMutator();
+  ASSERT_TRUE(Mutator);
+  mutateAndVerifyModule(Source, Mutator, 100);
+}
+
 TEST(InstDeleterIRStrategyTest, EmptyFunction) {
   // Test that we don't crash even if we can't remove from one of the functions.
 

@@ -28,6 +28,8 @@ static std::vector<BasicBlock *> getDominators(BasicBlock *BB) {
   std::vector<BasicBlock *> ret;
   DominatorTree DT(*BB->getParent());
   DomTreeNode *Node = DT.getNode(BB);
+  // It's possible that an orphan block is not in the dom tree. In that case we
+  // just return nothing.
   if (!Node)
     return ret;
   Node = Node->getIDom();
@@ -45,6 +47,8 @@ static std::vector<BasicBlock *> getDominatees(BasicBlock *BB) {
   DominatorTree DT(*BB->getParent());
   std::vector<BasicBlock *> ret;
   DomTreeNode *Parent = DT.getNode(BB);
+  // It's possible that an orphan block is not in the dom tree. In that case we
+  // just return nothing.
   if (!Parent)
     return ret;
   for (DomTreeNode *Child : Parent->children())
