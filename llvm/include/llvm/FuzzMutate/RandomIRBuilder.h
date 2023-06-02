@@ -42,8 +42,18 @@ struct RandomIRBuilder {
   uint64_t MaxArgNum = 5;
   uint64_t MinFunctionNum = 1;
 
-  RandomIRBuilder(int Seed, ArrayRef<Type *> AllowedTypes)
-      : Rand(Seed), KnownTypes(AllowedTypes.begin(), AllowedTypes.end()) {}
+  RandomIRBuilder(int Seed, ArrayRef<Type *> AllowedTypes, bool IRFuzzer = true)
+      : Rand(Seed), KnownTypes(AllowedTypes.begin(), AllowedTypes.end()) {
+    if (IRFuzzer) {
+      for (uint64_t i = 0; i < EndOfValueSource; i++)
+        SrcTys.push_back(i);
+      for (uint64_t i = 0; i < EndOfValueSink; i++)
+        SinkTys.push_back(i);
+    } else {
+      SrcTys = {SrcFromInstInCurBlock, NewConstOrStack};
+      SinkTys = {SinkToInstInCurBlock, NewStore};
+    }
+  }
 
   // TODO: Try to make this a bit less of a random mishmash of functions.
 
@@ -56,6 +66,7 @@ struct RandomIRBuilder {
   std::pair<GlobalVariable *, bool>
   findOrCreateGlobalVariable(Module *M, ArrayRef<Value *> Srcs,
                              fuzzerop::SourcePred Pred);
+
   enum SourceType {
     SrcFromInstInCurBlock,
     FunctionArgument,
@@ -64,6 +75,8 @@ struct RandomIRBuilder {
     NewConstOrStack,
     EndOfValueSource,
   };
+  SmallVector<uint64_t, 8> SrcTys;
+
   /// Find a "source" for some operation, which will be used in one of the
   /// operation's operands. This either selects an instruction in \c Insts or
   /// returns some new arbitrary Value.
@@ -90,6 +103,8 @@ struct RandomIRBuilder {
     SinkToGlobalVariable,
     EndOfValueSink,
   };
+  SmallVector<uint64_t, 8> SinkTys;
+
   /// Find a viable user for \c V in \c Insts, which should all be contained in
   /// \c BB. This may also create some new instruction in \c BB and use that.
   Instruction *connectToSink(BasicBlock &BB, ArrayRef<Instruction *> Insts,

@@ -60,11 +60,12 @@ size_t llvm::IRMutator::getModuleSize(const Module &M) {
   return M.getInstructionCount() + M.size() + M.global_size() + M.alias_size();
 }
 
-void IRMutator::mutateModule(Module &M, int Seed, size_t MaxSize) {
+void IRMutator::mutateModule(Module &M, int Seed, size_t MaxSize,
+                             bool IRFuzzer) {
   std::vector<Type *> Types;
   for (const auto &Getter : AllowedTypes)
     Types.push_back(Getter(M.getContext()));
-  RandomIRBuilder IB(Seed, Types);
+  RandomIRBuilder IB(Seed, Types, IRFuzzer);
 
   size_t CurSize = IRMutator::getModuleSize(M);
   auto RS = makeSampler<IRMutationStrategy *>(IB.Rand);
@@ -89,7 +90,8 @@ static void eliminateDeadCode(Function &F) {
 
 void InjectorIRStrategy::mutate(Function &F, RandomIRBuilder &IB) {
   IRMutationStrategy::mutate(F, IB);
-  eliminateDeadCode(F);
+  // By definition we shouldn't have dead code now.
+  // eliminateDeadCode(F);
 }
 
 std::vector<fuzzerop::OpDescriptor> InjectorIRStrategy::getDefaultOps() {

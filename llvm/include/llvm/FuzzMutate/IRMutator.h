@@ -82,7 +82,7 @@ public:
   /// \param M  module to mutate
   /// \param Seed seed for random mutation
   /// \param MaxSize max module size (see getModuleSize)
-  void mutateModule(Module &M, int Seed, size_t MaxSize);
+  void mutateModule(Module &M, int Seed, size_t MaxSize, bool IRFuzzer = true);
 };
 
 /// Strategy that injects operations into the function.
