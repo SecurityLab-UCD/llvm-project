@@ -117,9 +117,6 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
                                            SourcePred Pred,
                                            bool allowConstant) {
   auto MatchesPred = [&Srcs, &Pred](Value *V) { return Pred.matches(Srcs, V); };
-  SmallVector<uint64_t, 8> SrcTys;
-  for (uint64_t i = 0; i < EndOfValueSource; i++)
-    SrcTys.push_back(i);
   std::shuffle(SrcTys.begin(), SrcTys.end(), Rand);
   for (uint64_t SrcTy : SrcTys) {
     switch (SrcTy) {
@@ -290,9 +287,6 @@ static bool isCompatibleReplacement(const Instruction *I, const Use &Operand,
 Instruction *RandomIRBuilder::connectToSink(BasicBlock &BB,
                                             ArrayRef<Instruction *> Insts,
                                             Value *V) {
-  SmallVector<uint64_t, 8> SinkTys;
-  for (uint64_t i = 0; i < EndOfValueSink; i++)
-    SinkTys.push_back(i);
   std::shuffle(SinkTys.begin(), SinkTys.end(), Rand);
   auto findSinkAndConnect =
       [this, V](ArrayRef<Instruction *> Instructions) -> Instruction * {
