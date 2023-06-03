@@ -10,25 +10,26 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 
 using namespace llvm;
 using namespace fuzzerop;
 
 void llvm::describeFuzzerIntOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
-  Ops.push_back(binOpDescriptor(1, Instruction::Add));
-  Ops.push_back(binOpDescriptor(1, Instruction::Sub));
-  Ops.push_back(binOpDescriptor(1, Instruction::Mul));
-  Ops.push_back(binOpDescriptor(1, Instruction::SDiv));
-  Ops.push_back(binOpDescriptor(1, Instruction::UDiv));
-  Ops.push_back(binOpDescriptor(1, Instruction::SRem));
-  Ops.push_back(binOpDescriptor(1, Instruction::URem));
-  Ops.push_back(binOpDescriptor(1, Instruction::Shl));
-  Ops.push_back(binOpDescriptor(1, Instruction::LShr));
-  Ops.push_back(binOpDescriptor(1, Instruction::AShr));
-  Ops.push_back(binOpDescriptor(1, Instruction::And));
-  Ops.push_back(binOpDescriptor(1, Instruction::Or));
-  Ops.push_back(binOpDescriptor(1, Instruction::Xor));
+  Ops.push_back(binOpDescriptor(2, Instruction::Add));
+  Ops.push_back(binOpDescriptor(2, Instruction::Sub));
+  Ops.push_back(binOpDescriptor(2, Instruction::Mul));
+  Ops.push_back(binOpDescriptor(2, Instruction::SDiv));
+  Ops.push_back(binOpDescriptor(2, Instruction::UDiv));
+  Ops.push_back(binOpDescriptor(2, Instruction::SRem));
+  Ops.push_back(binOpDescriptor(2, Instruction::URem));
+  Ops.push_back(binOpDescriptor(2, Instruction::Shl));
+  Ops.push_back(binOpDescriptor(2, Instruction::LShr));
+  Ops.push_back(binOpDescriptor(2, Instruction::AShr));
+  Ops.push_back(binOpDescriptor(2, Instruction::And));
+  Ops.push_back(binOpDescriptor(2, Instruction::Or));
+  Ops.push_back(binOpDescriptor(2, Instruction::Xor));
 
   Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_EQ));
   Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_NE));
@@ -43,11 +44,11 @@ void llvm::describeFuzzerIntOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
 }
 
 void llvm::describeFuzzerFloatOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
-  Ops.push_back(binOpDescriptor(1, Instruction::FAdd));
-  Ops.push_back(binOpDescriptor(1, Instruction::FSub));
-  Ops.push_back(binOpDescriptor(1, Instruction::FMul));
-  Ops.push_back(binOpDescriptor(1, Instruction::FDiv));
-  Ops.push_back(binOpDescriptor(1, Instruction::FRem));
+  Ops.push_back(binOpDescriptor(2, Instruction::FAdd));
+  Ops.push_back(binOpDescriptor(2, Instruction::FSub));
+  Ops.push_back(binOpDescriptor(2, Instruction::FMul));
+  Ops.push_back(binOpDescriptor(2, Instruction::FDiv));
+  Ops.push_back(binOpDescriptor(2, Instruction::FRem));
 
   Ops.push_back(cmpOpDescriptor(1, Instruction::FCmp, CmpInst::FCMP_FALSE));
   Ops.push_back(cmpOpDescriptor(1, Instruction::FCmp, CmpInst::FCMP_OEQ));
@@ -69,7 +70,7 @@ void llvm::describeFuzzerFloatOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
 
 void llvm::describeFuzzerUnaryOperations(
     std::vector<fuzzerop::OpDescriptor> &Ops) {
-  Ops.push_back(fnegDescriptor(1));
+  Ops.push_back(fnegDescriptor(2));
 }
 
 void llvm::describeFuzzerControlFlowOps(
@@ -78,7 +79,23 @@ void llvm::describeFuzzerControlFlowOps(
 }
 
 void llvm::describeFuzzerOtherOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
-  Ops.push_back(selectDescriptor(1));
+  Ops.push_back(selectDescriptor(2));
+}
+
+void llvm::describeFuzzerCastOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
+  // Ops.push_back(castOpDescriptor(1, Instruction::AddrSpaceCast));
+  // Ops.push_back(castOpDescriptor(1, Instruction::BitCast));
+  Ops.push_back(castOpDescriptor(1, Instruction::FPExt));
+  Ops.push_back(castOpDescriptor(1, Instruction::FPTrunc));
+  Ops.push_back(castOpDescriptor(1, Instruction::FPToSI));
+  Ops.push_back(castOpDescriptor(1, Instruction::FPToUI));
+  Ops.push_back(castOpDescriptor(1, Instruction::IntToPtr));
+  Ops.push_back(castOpDescriptor(1, Instruction::PtrToInt));
+  Ops.push_back(castOpDescriptor(1, Instruction::SIToFP));
+  Ops.push_back(castOpDescriptor(1, Instruction::UIToFP));
+  // Ops.push_back(castOpDescriptor(1, Instruction::SExt));
+  // Ops.push_back(castOpDescriptor(1, Instruction::Trunc));
+  // Ops.push_back(castOpDescriptor(1, Instruction::ZExt));
 }
 
 void llvm::describeFuzzerPointerOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
@@ -92,9 +109,9 @@ void llvm::describeFuzzerAggregateOps(
 }
 
 void llvm::describeFuzzerVectorOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
-  Ops.push_back(extractElementDescriptor(1));
-  Ops.push_back(insertElementDescriptor(1));
-  Ops.push_back(shuffleVectorDescriptor(1));
+  Ops.push_back(extractElementDescriptor(2));
+  Ops.push_back(insertElementDescriptor(2));
+  Ops.push_back(shuffleVectorDescriptor(2));
 }
 
 OpDescriptor llvm::fuzzerop::selectDescriptor(unsigned Weight) {
@@ -349,4 +366,79 @@ OpDescriptor llvm::fuzzerop::shuffleVectorDescriptor(unsigned Weight) {
   return {Weight,
           {anyVectorType(), matchFirstType(), validShuffleVectorIndex()},
           buildShuffle};
+}
+
+OpDescriptor llvm::fuzzerop::castOpDescriptor(unsigned Weight,
+                                              Instruction::CastOps Op) {
+  auto buildOp = [Op](ArrayRef<Value *> Srcs, Instruction *Inst) {
+    return CastInst::Create(Op, Srcs[0], Srcs[1]->getType(), "C", Inst);
+  };
+  switch (Op) {
+  case Instruction::AddrSpaceCast:
+  case Instruction::BitCast: {
+    /// TODO: We forbids BitCase in case the mutator wants to case types with
+    /// different bitcounts.
+    break;
+  }
+  case Instruction::FPExt: {
+    /// TODO: Only float and double is supported here.
+    return {Weight,
+            {anyXOrVecXType(
+                 [](Type *Ty) { return Ty->isHalfTy() || Ty->isFloatTy(); }),
+             validCastType(Op)},
+            buildOp};
+  }
+  case Instruction::FPTrunc: {
+    return {Weight,
+            {anyXOrVecXType(
+                 [](Type *Ty) { return Ty->isDoubleTy() || Ty->isFloatTy(); }),
+             validCastType(Op)},
+            buildOp};
+    break;
+  }
+  case Instruction::IntToPtr: {
+    /// TODO: We forbits vector int to vector pointer cast now.
+    /// That needs us to have all pointer types of the same length ready.
+    return {Weight, {anyIntType(), validCastType(Op)}, buildOp};
+    break;
+  }
+  case Instruction::PtrToInt: {
+    return {Weight, {sizedPtrType(), validCastType(Op)}, buildOp};
+    break;
+  }
+  case Instruction::FPToSI:
+  case Instruction::FPToUI: {
+    return {Weight, {anyFloatOrVecFloatType(), validCastType(Op)}, buildOp};
+    break;
+  }
+  case Instruction::SIToFP:
+  case Instruction::UIToFP: {
+    return {Weight, {anyIntOrVecIntType(), validCastType(Op)}, buildOp};
+    break;
+  }
+  case Instruction::Trunc: {
+    auto ge1BitInt = [](Type *Ty) {
+      if (IntegerType *IntTy = dyn_cast<IntegerType>(Ty)) {
+        return IntTy->getBitWidth() > 1;
+      }
+      return false;
+    };
+    return {Weight, {anyXOrVecXType(ge1BitInt), validCastType(Op)}, buildOp};
+    break;
+  }
+  case Instruction::SExt:
+  case Instruction::ZExt: {
+    auto lt64BitInt = [](Type *Ty) {
+      if (IntegerType *IntTy = dyn_cast<IntegerType>(Ty)) {
+        return IntTy->getBitWidth() < 64;
+      }
+      return false;
+    };
+    return {Weight, {anyXOrVecXType(lt64BitInt), validCastType(Op)}, buildOp};
+    break;
+  }
+  default:
+    llvm_unreachable("No other cast.");
+  }
+  llvm_unreachable("Non exaustive cast.");
 }

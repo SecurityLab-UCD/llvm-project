@@ -285,6 +285,28 @@ static inline SourcePred matchScalarOfFirstType() {
   return {Pred, Make};
 }
 
+using TypeMatch = std::function<bool(Type *)>;
+static inline SourcePred anyXOrVecXType(TypeMatch IT) {
+  auto Pred = [IT](ArrayRef<Value *>, const Value *V) {
+    Type *Ty = V->getType();
+    if (VectorType *VecTy = dyn_cast<VectorType>(Ty)) {
+      Ty = VecTy->getElementType();
+    }
+    return IT(Ty);
+  };
+  auto Make = std::nullopt;
+  return {Pred, Make};
+}
+
+static inline SourcePred validCastType(llvm::Instruction::CastOps Op) {
+  auto Pred = [Op](ArrayRef<Value *> Cur, const Value *V) {
+    assert(!Cur.empty() && "No first source yet");
+    return CastInst::castIsValid(Op, Cur[0]->getType(), V->getType());
+  };
+  auto Make = std::nullopt;
+  return {Pred, Make};
+}
+
 } // namespace fuzzerop
 } // namespace llvm
 

@@ -77,6 +77,8 @@ public:
   /// \return number of objects in module
   static size_t getModuleSize(const Module &M);
 
+  static std::vector<TypeGetter> getDefaultAllowedTypes();
+
   /// Mutate given module. No change will be made if no strategy is selected.
   ///
   /// \param M  module to mutate
