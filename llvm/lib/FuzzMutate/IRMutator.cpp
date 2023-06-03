@@ -60,6 +60,33 @@ size_t llvm::IRMutator::getModuleSize(const Module &M) {
   return M.getInstructionCount() + M.size() + M.global_size() + M.alias_size();
 }
 
+std::vector<TypeGetter> llvm::IRMutator::getDefaultAllowedTypes() {
+  std::vector<TypeGetter> ScalarTypes{
+      Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty,  Type::getInt32Ty,
+      Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy, Type::getHalfTy};
+
+  // Scalar types
+  std::vector<TypeGetter> Types(ScalarTypes);
+
+  // Vector types
+  int VectorLength[] = {1, 2, 4, 8, 16, 32};
+  std::vector<TypeGetter> BasicTypeGetters(Types);
+  for (auto typeGetter : BasicTypeGetters) {
+    for (int length : VectorLength) {
+      Types.push_back([typeGetter, length](LLVMContext &C) {
+        return VectorType::get(typeGetter(C), length, false);
+      });
+    }
+  }
+
+  // Pointers
+  TypeGetter OpaquePtrGetter = [](LLVMContext &C) {
+    return PointerType::get(Type::getInt32Ty(C), 0);
+  };
+  Types.push_back(OpaquePtrGetter);
+  return Types;
+}
+
 void IRMutator::mutateModule(Module &M, int Seed, size_t MaxSize,
                              bool IRFuzzer) {
   std::vector<Type *> Types;
@@ -102,6 +129,7 @@ std::vector<fuzzerop::OpDescriptor> InjectorIRStrategy::getDefaultOps() {
   describeFuzzerPointerOps(Ops);
   describeFuzzerAggregateOps(Ops);
   describeFuzzerVectorOps(Ops);
+  describeFuzzerCastOps(Ops);
   return Ops;
 }
 
