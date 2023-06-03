@@ -129,7 +129,7 @@ std::vector<fuzzerop::OpDescriptor> InjectorIRStrategy::getDefaultOps() {
   describeFuzzerPointerOps(Ops);
   describeFuzzerAggregateOps(Ops);
   describeFuzzerVectorOps(Ops);
-  describeFuzzerCastOps(Ops);
+  // describeFuzzerCastOps(Ops);
   return Ops;
 }
 
