@@ -298,12 +298,29 @@ static inline SourcePred anyXOrVecXType(TypeMatch IT) {
   return {Pred, Make};
 }
 
-static inline SourcePred validCastType(llvm::Instruction::CastOps Op) {
+using TypeGetter = std::function<Type *(LLVMContext &)>;
+static inline SourcePred validCastType(llvm::Instruction::CastOps Op,
+                                       TypeGetter DefaultGetter) {
   auto Pred = [Op](ArrayRef<Value *> Cur, const Value *V) {
     assert(!Cur.empty() && "No first source yet");
     return CastInst::castIsValid(Op, Cur[0]->getType(), V->getType());
   };
-  auto Make = std::nullopt;
+  auto Make = [Op, DefaultGetter](ArrayRef<Value *> Cur, ArrayRef<Type *>) {
+    assert(!Cur.empty() && "No first source yet");
+    Value *PrevVal = Cur.back();
+    LLVMContext &C = PrevVal->getContext();
+    Type *SrcTy = PrevVal->getType();
+    Type *CastTo = nullptr;
+    if (VectorType *VecTy = dyn_cast<VectorType>(SrcTy)) {
+      ElementCount EC = VecTy->getElementCount();
+      CastTo = VectorType::get(DefaultGetter(C), EC);
+    } else {
+      CastTo = DefaultGetter(C);
+    }
+    assert(CastInst::castIsValid(Op, SrcTy, CastTo) &&
+           "Default type is invalid cast.");
+    return std::vector<Constant *>({UndefValue::get(CastTo)});
+  };
   return {Pred, Make};
 }
 

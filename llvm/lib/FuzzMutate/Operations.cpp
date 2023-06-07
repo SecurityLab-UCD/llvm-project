@@ -377,43 +377,50 @@ OpDescriptor llvm::fuzzerop::castOpDescriptor(unsigned Weight,
   case Instruction::AddrSpaceCast:
   case Instruction::BitCast: {
     /// TODO: We forbids BitCase in case the mutator wants to case types with
-    /// different bitcounts.
+    /// different bitwidth.
     break;
   }
   case Instruction::FPExt: {
-    /// TODO: Only float and double is supported here.
     return {Weight,
             {anyXOrVecXType(
                  [](Type *Ty) { return Ty->isHalfTy() || Ty->isFloatTy(); }),
-             validCastType(Op)},
+             validCastType(Op, Type::getDoubleTy)},
             buildOp};
   }
   case Instruction::FPTrunc: {
     return {Weight,
             {anyXOrVecXType(
                  [](Type *Ty) { return Ty->isDoubleTy() || Ty->isFloatTy(); }),
-             validCastType(Op)},
+             validCastType(Op, Type::getHalfTy)},
             buildOp};
     break;
   }
   case Instruction::IntToPtr: {
-    /// TODO: We forbits vector int to vector pointer cast now.
-    /// That needs us to have all pointer types of the same length ready.
-    return {Weight, {anyIntType(), validCastType(Op)}, buildOp};
+    TypeGetter OpaquePtrGetter = [](LLVMContext &C) {
+      return PointerType::get(Type::getInt32Ty(C), 0);
+    };
+    return {Weight,
+            {anyIntOrVecIntType(), validCastType(Op, OpaquePtrGetter)},
+            buildOp};
     break;
   }
   case Instruction::PtrToInt: {
-    return {Weight, {sizedPtrType(), validCastType(Op)}, buildOp};
+    return {
+        Weight, {sizedPtrType(), validCastType(Op, Type::getInt32Ty)}, buildOp};
     break;
   }
   case Instruction::FPToSI:
   case Instruction::FPToUI: {
-    return {Weight, {anyFloatOrVecFloatType(), validCastType(Op)}, buildOp};
+    return {Weight,
+            {anyFloatOrVecFloatType(), validCastType(Op, Type::getInt32Ty)},
+            buildOp};
     break;
   }
   case Instruction::SIToFP:
   case Instruction::UIToFP: {
-    return {Weight, {anyIntOrVecIntType(), validCastType(Op)}, buildOp};
+    return {Weight,
+            {anyIntOrVecIntType(), validCastType(Op, Type::getFloatTy)},
+            buildOp};
     break;
   }
   case Instruction::Trunc: {
@@ -423,7 +430,9 @@ OpDescriptor llvm::fuzzerop::castOpDescriptor(unsigned Weight,
       }
       return false;
     };
-    return {Weight, {anyXOrVecXType(ge1BitInt), validCastType(Op)}, buildOp};
+    return {Weight,
+            {anyXOrVecXType(ge1BitInt), validCastType(Op, Type::getInt1Ty)},
+            buildOp};
     break;
   }
   case Instruction::SExt:
@@ -434,7 +443,9 @@ OpDescriptor llvm::fuzzerop::castOpDescriptor(unsigned Weight,
       }
       return false;
     };
-    return {Weight, {anyXOrVecXType(lt64BitInt), validCastType(Op)}, buildOp};
+    return {Weight,
+            {anyXOrVecXType(lt64BitInt), validCastType(Op, Type::getInt64Ty)},
+            buildOp};
     break;
   }
   default:

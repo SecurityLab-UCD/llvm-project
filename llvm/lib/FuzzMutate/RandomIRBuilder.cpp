@@ -98,6 +98,9 @@ RandomIRBuilder::findOrCreateGlobalVariable(Module *M, ArrayRef<Value *> Srcs,
     TRS.sample(Pred.generate(Srcs, KnownTypes));
     Constant *Init = TRS.getSelection();
     Type *Ty = Init->getType();
+    // Scalable Type is not allowed for global.
+    if (Ty->isScalableTy())
+      return {nullptr, false};
     GV = new GlobalVariable(*M, Ty, false, LinkageTypes::ExternalLinkage, Init,
                             "G", nullptr,
                             GlobalValue::ThreadLocalMode::NotThreadLocal,
@@ -159,6 +162,8 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
     case SrcFromGlobalVariable: {
       Module *M = BB.getParent()->getParent();
       auto [GV, DidCreate] = findOrCreateGlobalVariable(M, Srcs, Pred);
+      if (!GV)
+        break;
       Type *Ty = GV->getValueType();
       LoadInst *LoadGV = nullptr;
       if (BB.getTerminator()) {
@@ -345,6 +350,8 @@ Instruction *RandomIRBuilder::connectToSink(BasicBlock &BB,
       Module *M = BB.getParent()->getParent();
       auto [GV, DidCreate] =
           findOrCreateGlobalVariable(M, {}, fuzzerop::onlyType(V->getType()));
+      if (!GV)
+        break;
       return new StoreInst(V, GV, Insts.back());
     }
     case EndOfValueSink:
