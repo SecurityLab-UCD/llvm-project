@@ -720,6 +720,59 @@ TEST(ShuffleBlockStrategy, ShuffleLoop) {
   VerifyBlockShuffle(Source);
 }
 
+void testCastStrategy(StringRef Source) {
+  std::vector<std::unique_ptr<IRMutationStrategy>> Strategies;
+  std::vector<fuzzerop::OpDescriptor> Ops;
+  describeFuzzerCastOps(Ops);
+  std::vector<TypeGetter> Types({Type::getInt32Ty});
+  Strategies.push_back(std::make_unique<InjectorIRStrategy>(std::move(Ops)));
+  auto Mutator =
+      std::make_unique<IRMutator>(std::move(Types), std::move(Strategies));
+  LLVMContext Ctx;
+  for (int i = 0; i < 10; ++i) {
+    auto M = parseAssembly(Source.data(), Ctx);
+    ASSERT_TRUE(M && !verifyModule(*M, &errs()));
+
+    Mutator->mutateModule(*M, Seed, IRMutator::getModuleSize(*M) + 100, true);
+    EXPECT_TRUE(!verifyModule(*M, &errs()));
+  }
+}
+TEST(InjectorIRStrategyTest, CastInst) {
+  std::vector<const char *> Sources(
+      {"define void @vec3_setcc_crash(ptr %in, ptr %out) { \n\
+        %a = load <3 x i8>, ptr %in, align 4 \n\
+        %cmp = icmp sgt <3 x i8> %a, zeroinitializer \n\
+        %c = select <3 x i1> %cmp, <3 x i8> %a, <3 x i8> zeroinitializer \n\
+        store <3 x i8> %c, ptr %out, align 4 \n\
+        ret void \n\
+      } \n",
+       "define <2 x i16> @fixedlen(<2 x i32> %x) { \n\
+        %v41 = insertelement <2 x i32> poison, i32 16, i32 0 \n\
+        %v42 = shufflevector <2 x i32> %v41, <2 x i32> poison, <2 x i32> zeroinitializer \n\
+        %v43 = lshr <2 x i32> %x, %v42 \n\
+        %v44 = trunc <2 x i32> %v43 to <2 x i16> \n\
+        %v45 = insertelement <2 x i32> poison, i32 -32768, i32 0 \n\
+        %v46 = shufflevector <2 x i32> %v45, <2 x i32> poison, <2 x i32> zeroinitializer \n\
+        %v47 = trunc <2 x i32> %v46 to <2 x i16> \n\
+        %v48 = and <2 x i16> %v44, %v47 \n\
+        ret <2 x i16> %v48 \n\
+      } \n\
+      define <vscale x 2 x i16> @scalable(<vscale x 2 x i32> %x) { \n\
+        %v41 = insertelement <vscale x 2 x i32> poison, i32 16, i32 0 \n\
+        %v42 = shufflevector <vscale x 2 x i32> %v41, <vscale x 2 x i32> poison, <vscale x 2 x i32> zeroinitializer \n\
+        %v43 = lshr <vscale x 2 x i32> %x, %v42 \n\
+        %v44 = trunc <vscale x 2 x i32> %v43 to <vscale x 2 x i16> \n\
+        %v45 = insertelement <vscale x 2 x i32> poison, i32 -32768, i32 0 \n\
+        %v46 = shufflevector <vscale x 2 x i32> %v45, <vscale x 2 x i32> poison, <vscale x 2 x i32> zeroinitializer \n\
+        %v47 = trunc <vscale x 2 x i32> %v46 to <vscale x 2 x i16> \n\
+        %v48 = and <vscale x 2 x i16> %v44, %v47 \n\
+        ret <vscale x 2 x i16> %v48 \n\
+      } \n"});
+  for (const char *Source : Sources) {
+    testCastStrategy(Source);
+  }
+}
+
 TEST(AllStrategies, SkipEHPad) {
   StringRef Source = "\n\
     define void @f(i32 %x) personality ptr @__CxxFrameHandler3 { \n\
