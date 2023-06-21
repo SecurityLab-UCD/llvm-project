@@ -145,6 +145,13 @@ public:
 
   using IRMutationStrategy::mutate;
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
+
+protected:
+  /// @brief Chooses a function to call from the given module
+  /// @param M module from which a function is selected
+  /// @param IB random IR builder
+  /// @return the function to call, or nullptr to create a new function declaration
+  virtual Function *chooseFunction(Module *M, RandomIRBuilder &IB);
 };
 
 /// Strategy to split a random block and insert a random CFG in between.
