@@ -386,19 +386,15 @@ static uint64_t getUniqueCaseValue(SmallSet<uint64_t, 4> &CasesTaken,
   return tmp;
 }
 
-Function *InsertFunctionStrategy::chooseFunction(Module *M, RandomIRBuilder &IB) {
+Function *InsertFunctionStrategy::chooseFunction(Module *M,
+                                                 RandomIRBuilder &IB) {
   // If nullptr is selected, we will create a new function declaration.
   SmallVector<Function *, 32> Functions({nullptr});
   for (Function &F : M->functions()) {
     Functions.push_back(&F);
   }
   auto RS = makeSampler(IB.Rand, Functions);
-  return RS.getSelection();
-}
-
-void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
-  Module *M = BB.getParent()->getParent();
-  Function *F = chooseFunction(M, IB);
+  Function *F = RS.getSelection();
   // Some functions accept metadata type or token type as arguments.
   // We don't call those functions for now.
   // For example, `@llvm.dbg.declare(metadata, metadata, metadata)`
@@ -410,6 +406,15 @@ void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
       any_of(F->getFunctionType()->params(), IsUnsupportedTy)) {
     F = IB.createFunctionDeclaration(*M);
   }
+  return F;
+}
+
+void InsertFunctionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  Module *M = BB.getParent()->getParent();
+  Function *F = chooseFunction(M, IB);
+
+  if (!F)
+    return;
 
   FunctionType *FTy = F->getFunctionType();
   SmallVector<fuzzerop::SourcePred, 2> SourcePreds;
