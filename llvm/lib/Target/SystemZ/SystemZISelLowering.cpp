@@ -231,6 +231,8 @@ SystemZTargetLowering::SystemZTargetLowering(const TargetMachine &TM,
       setOperationAction(ISD::STRICT_SINT_TO_FP, VT, Legal);
       if (Subtarget.hasFPExtension())
         setOperationAction(ISD::STRICT_UINT_TO_FP, VT, Legal);
+
+      setOperationAction(ISD::FP16_TO_FP, VT, Custom);
     }
   }
 
@@ -471,6 +473,8 @@ SystemZTargetLowering::SystemZTargetLowering(const TargetMachine &TM,
 
       // Special treatment.
       setOperationAction(ISD::IS_FPCLASS, VT, Custom);
+      
+      setOperationAction(ISD::FP_TO_FP16, VT, Custom);
 
       // Handle constrained floating-point operations.
       setOperationAction(ISD::STRICT_FADD, VT, Legal);
@@ -5814,6 +5818,30 @@ SDValue SystemZTargetLowering::lowerIS_FPCLASS(SDValue Op,
   return getCCResult(DAG, Intr);
 }
 
+SDValue SystemZTargetLowering::lowerFP_TO_FP16(SDValue Op,
+                                               SelectionDAG &DAG) const {
+  assert(Op.getValueType() == MVT::i32 && "Expected node of type i32");
+
+  SDValue operand = Op.getOperand(0);
+  assert(operand.getValueType() == MVT::f32 && 
+         "Expected operand node of type f32");
+
+  SDLoc DL(Op);
+  return DAG.getNode(ISD::FP_TO_SINT, DL, MVT::i32, operand);
+}
+
+SDValue SystemZTargetLowering::lowerFP16_TO_FP(SDValue Op,
+                                               SelectionDAG &DAG) const {
+  assert(Op.getValueType() == MVT::f32 && "Expected node of type f32");
+
+  SDValue operand = Op.getOperand(0); 
+  assert(operand.getValueType()  == MVT::i32 && 
+         "Expected operand node of type i32");
+
+  SDLoc DL(Op);
+  return DAG.getNode(ISD::SINT_TO_FP, DL, MVT::f32, operand);
+}
+
 SDValue SystemZTargetLowering::LowerOperation(SDValue Op,
                                               SelectionDAG &DAG) const {
   switch (Op.getOpcode()) {
@@ -5935,6 +5963,10 @@ SDValue SystemZTargetLowering::LowerOperation(SDValue Op,
     return lowerIS_FPCLASS(Op, DAG);
   case ISD::GET_ROUNDING:
     return lowerGET_ROUNDING(Op, DAG);
+  case ISD::FP_TO_FP16:
+    return lowerFP_TO_FP16(Op, DAG);
+  case ISD::FP16_TO_FP:
+    return lowerFP16_TO_FP(Op, DAG);
   default:
     llvm_unreachable("Unexpected node to lower");
   }
