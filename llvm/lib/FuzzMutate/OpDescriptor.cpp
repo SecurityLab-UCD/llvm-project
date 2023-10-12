@@ -42,8 +42,8 @@ void fuzzerop::makeConstantsWithType(Type *T, std::vector<Constant *> &Cs) {
       Cs.push_back(ConstantVector::getSplat(EC, Elt));
     }
   } else {
-    Cs.push_back(UndefValue::get(T));
-    Cs.push_back(PoisonValue::get(T));
+    // Cs.push_back(UndefValue::get(T));
+    // Cs.push_back(PoisonValue::get(T));
   }
 }
 

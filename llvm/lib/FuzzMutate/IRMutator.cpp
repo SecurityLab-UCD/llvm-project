@@ -61,14 +61,16 @@ size_t llvm::IRMutator::getModuleSize(const Module &M) {
 }
 
 std::vector<TypeGetter> llvm::IRMutator::getDefaultAllowedTypes() {
-  std::vector<TypeGetter> ScalarTypes{
-      Type::getInt1Ty,  Type::getInt8Ty,  Type::getInt16Ty,  Type::getInt32Ty,
-      Type::getInt64Ty, Type::getFloatTy, Type::getDoubleTy, Type::getHalfTy};
+  std::vector<TypeGetter> ScalarTypes{Type::getInt1Ty,   Type::getInt8Ty,
+                                      Type::getInt16Ty,  Type::getInt32Ty,
+                                      Type::getInt64Ty,  Type::getFloatTy,
+                                      Type::getDoubleTy, /*Type::getHalfTy*/};
 
   // Scalar types
   std::vector<TypeGetter> Types(ScalarTypes);
 
   // Vector types
+  /*
   int VectorLength[] = {1, 2, 4, 8, 16, 32};
   std::vector<TypeGetter> BasicTypeGetters(Types);
   for (auto typeGetter : BasicTypeGetters) {
@@ -78,12 +80,16 @@ std::vector<TypeGetter> llvm::IRMutator::getDefaultAllowedTypes() {
       });
     }
   }
+  */
 
   // Pointers
+  // FIXME: maybe enable?
+  /*
   TypeGetter OpaquePtrGetter = [](LLVMContext &C) {
     return PointerType::get(Type::getInt32Ty(C), 0);
   };
   Types.push_back(OpaquePtrGetter);
+  */
   return Types;
 }
 
@@ -390,7 +396,7 @@ static uint64_t getUniqueCaseValue(SmallSet<uint64_t, 4> &CasesTaken,
 
 Function *InsertFunctionStrategy::chooseFunction(Module *M,
                                                  RandomIRBuilder &IB) {
-  // If nullptr is selected, we will create a new function declaration.
+  // If nullptr is selected, we will create a new function definition.
   SmallVector<Function *, 32> Functions({nullptr});
   for (Function &F : M->functions()) {
     Functions.push_back(&F);
@@ -406,7 +412,7 @@ Function *InsertFunctionStrategy::chooseFunction(Module *M,
   };
   if (!F || IsUnsupportedTy(F->getReturnType()) ||
       any_of(F->getFunctionType()->params(), IsUnsupportedTy)) {
-    F = IB.createFunctionDeclaration(*M);
+    F = IB.createFunctionDefinition(*M);
   }
   return F;
 }
