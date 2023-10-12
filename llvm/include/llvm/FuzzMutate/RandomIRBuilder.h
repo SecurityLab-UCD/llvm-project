@@ -38,8 +38,8 @@ struct RandomIRBuilder {
   RandomEngine Rand;
   SmallVector<Type *, 16> KnownTypes;
 
-  uint64_t MinArgNum = 0;
-  uint64_t MaxArgNum = 5;
+  uint64_t MinArgNum = 1;
+  uint64_t MaxArgNum = 8;
   uint64_t MinFunctionNum = 1;
 
   RandomIRBuilder(int Seed, ArrayRef<Type *> AllowedTypes, bool IRFuzzer = true)
@@ -71,9 +71,10 @@ struct RandomIRBuilder {
     SrcFromInstInCurBlock,
     FunctionArgument,
     InstInDominator,
-    SrcFromGlobalVariable,
     NewConstOrStack,
     EndOfValueSource,
+    // incompatible
+    SrcFromGlobalVariable,
   };
   SmallVector<uint64_t, 8> SrcTys;
 
@@ -97,11 +98,12 @@ struct RandomIRBuilder {
   enum SinkType {
     /// TODO: Also consider pointers in function argument.
     SinkToInstInCurBlock,
-    PointersInDominator,
     InstInDominatee,
     NewStore,
-    SinkToGlobalVariable,
     EndOfValueSink,
+    // incompatible
+    PointersInDominator,
+    SinkToGlobalVariable,
   };
   SmallVector<uint64_t, 8> SinkTys;
 

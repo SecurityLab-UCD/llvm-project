@@ -368,12 +368,8 @@ Instruction *RandomIRBuilder::newSink(BasicBlock &BB,
                                       ArrayRef<Instruction *> Insts, Value *V) {
   Value *Ptr = findPointer(BB, Insts, {V}, matchFirstType());
   if (!Ptr) {
-    if (uniform(Rand, 0, 1)) {
-      Type *Ty = V->getType();
-      Ptr = createStackMemory(BB.getParent(), Ty, UndefValue::get(Ty));
-    } else {
-      Ptr = UndefValue::get(PointerType::get(V->getType(), 0));
-    }
+    Type *Ty = V->getType();
+    Ptr = createStackMemory(BB.getParent(), Ty, UndefValue::get(Ty));
   }
 
   return new StoreInst(V, Ptr, Insts.back());
