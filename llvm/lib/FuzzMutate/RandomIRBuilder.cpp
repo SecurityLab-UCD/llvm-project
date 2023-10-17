@@ -375,7 +375,8 @@ Instruction *RandomIRBuilder::newSink(BasicBlock &BB,
   Value *Ptr = findPointer(BB, Insts, {V}, matchFirstType());
   if (!Ptr) {
     Type *Ty = V->getType();
-    Ptr = createStackMemory(BB.getParent(), Ty, makeConstantsWithType(Ty)[0]);
+    Ptr = createStackMemory(BB.getParent(), Ty, 
+      findOrCreateSource(BB, Insts, {}, onlyType(Ty), true));
   }
 
   return new StoreInst(V, Ptr, Insts.back());
@@ -432,7 +433,7 @@ Function *RandomIRBuilder::createFunctionDefinition(Module &M,
   Type *RetTy = F->getReturnType();
   if (RetTy != Type::getVoidTy(Context)) {
     Instruction *RetAlloca =
-        new AllocaInst(RetTy, DL.getAllocaAddrSpace(), "RP", BB);
+        new AllocaInst(RetTy, DL.getAllocaAddrSpace(), "RP", BB); 
     Instruction *RetLoad = new LoadInst(RetTy, RetAlloca, "", BB);
     ReturnInst::Create(Context, RetLoad, BB);
   } else {
