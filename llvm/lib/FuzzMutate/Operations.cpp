@@ -20,10 +20,10 @@ void llvm::describeFuzzerIntOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
   Ops.push_back(binOpDescriptor(2, Instruction::Add));
   Ops.push_back(binOpDescriptor(2, Instruction::Sub));
   Ops.push_back(binOpDescriptor(2, Instruction::Mul));
-  Ops.push_back(binOpDescriptor(2, Instruction::SDiv));
-  Ops.push_back(binOpDescriptor(2, Instruction::UDiv));
-  Ops.push_back(binOpDescriptor(2, Instruction::SRem));
-  Ops.push_back(binOpDescriptor(2, Instruction::URem));
+  // Ops.push_back(binOpDescriptor(2, Instruction::SDiv));
+  // Ops.push_back(binOpDescriptor(2, Instruction::UDiv));
+  // Ops.push_back(binOpDescriptor(2, Instruction::SRem));
+  // Ops.push_back(binOpDescriptor(2, Instruction::URem));
   Ops.push_back(binOpDescriptor(2, Instruction::Shl));
   Ops.push_back(binOpDescriptor(2, Instruction::LShr));
   Ops.push_back(binOpDescriptor(2, Instruction::AShr));
@@ -31,16 +31,16 @@ void llvm::describeFuzzerIntOps(std::vector<fuzzerop::OpDescriptor> &Ops) {
   Ops.push_back(binOpDescriptor(2, Instruction::Or));
   Ops.push_back(binOpDescriptor(2, Instruction::Xor));
 
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_EQ));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_NE));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_UGT));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_UGE));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_ULT));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_ULE));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_SGT));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_SGE));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_SLT));
-  Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_SLE));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_EQ));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_NE));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_UGT));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_UGE));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_ULT));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_ULE));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_SGT));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_SGE));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_SLT));
+  // Ops.push_back(cmpOpDescriptor(1, Instruction::ICmp, CmpInst::ICMP_SLE));
 }
 
 void llvm::describeFuzzerFloatOps(std::vector<fuzzerop::OpDescriptor> &Ops) {

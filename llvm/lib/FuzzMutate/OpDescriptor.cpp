@@ -15,9 +15,20 @@ using namespace fuzzerop;
 void fuzzerop::makeConstantsWithType(Type *T, std::vector<Constant *> &Cs) {
   if (auto *IntTy = dyn_cast<IntegerType>(T)) {
     uint64_t W = IntTy->getBitWidth();
-    Cs.push_back(ConstantInt::get(IntTy, 0));
-    Cs.push_back(ConstantInt::get(IntTy, 1));
-    Cs.push_back(ConstantInt::get(IntTy, 42));
+    if (W >= 1) {
+      Cs.push_back(ConstantInt::get(IntTy, 0));
+      Cs.push_back(ConstantInt::get(IntTy, 1));
+    }
+    if (W >= 8) {
+      Cs.push_back(ConstantInt::get(IntTy, 42));
+      Cs.push_back(ConstantInt::get(IntTy, 127));
+      Cs.push_back(ConstantInt::get(IntTy, 128));
+    }
+    if (W >= 16) {
+      Cs.push_back(ConstantInt::get(IntTy, 12538));
+      Cs.push_back(ConstantInt::get(IntTy, 32767));
+      Cs.push_back(ConstantInt::get(IntTy, 32768));
+    }
     Cs.push_back(ConstantInt::get(IntTy, APInt::getMaxValue(W)));
     Cs.push_back(ConstantInt::get(IntTy, APInt::getMinValue(W)));
     Cs.push_back(ConstantInt::get(IntTy, APInt::getSignedMaxValue(W)));
@@ -42,6 +53,7 @@ void fuzzerop::makeConstantsWithType(Type *T, std::vector<Constant *> &Cs) {
       Cs.push_back(ConstantVector::getSplat(EC, Elt));
     }
   } else {
+    llvm_unreachable("Unexpected type to create a constant");
     // Cs.push_back(UndefValue::get(T));
     // Cs.push_back(PoisonValue::get(T));
   }

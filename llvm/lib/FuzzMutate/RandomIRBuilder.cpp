@@ -159,6 +159,7 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
       }
       break;
     }
+    /*
     case SrcFromGlobalVariable: {
       Module *M = BB.getParent()->getParent();
       auto [GV, DidCreate] = findOrCreateGlobalVariable(M, Srcs, Pred);
@@ -185,6 +186,7 @@ Value *RandomIRBuilder::findOrCreateSource(BasicBlock &BB,
       }
       break;
     }
+    */
     case NewConstOrStack: {
       return newSource(BB, Insts, Srcs, Pred, allowConstant);
     }
@@ -227,19 +229,21 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
   }
 
   Value *newSrc = RS.getSelection();
+
   // Generate a stack alloca and store the constant to it if constant is not
   // allowed, our hope is that later mutations can generate some values and
   // store to this placeholder.
-  if (!allowConstant && isa<Constant>(newSrc)) {
-    Type *Ty = newSrc->getType();
-    Function *F = BB.getParent();
-    AllocaInst *Alloca = createStackMemory(F, Ty, newSrc);
-    if (BB.getTerminator()) {
-      newSrc = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", BB.getTerminator());
-    } else {
-      newSrc = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", &BB);
-    }
-  }
+  //  if (!allowConstant && isa<Constant>(newSrc)) {
+  //    Type *Ty = newSrc->getType();
+  //    Function *F = BB.getParent();
+  //    AllocaInst *Alloca = createStackMemory(F, Ty, newSrc);
+  //    if (BB.getTerminator()) {
+  //      newSrc = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L",
+  //      BB.getTerminator());
+  //    } else {
+  //      newSrc = new LoadInst(Ty, Alloca, /*ArrLen,*/ "L", &BB);
+  //    }
+  //  }
   return newSrc;
 }
 
@@ -348,6 +352,7 @@ Instruction *RandomIRBuilder::connectToSink(BasicBlock &BB,
     case NewStore:
       /// TODO: allocate a new stack memory.
       return newSink(BB, Insts, V);
+    /*
     case SinkToGlobalVariable: {
       Module *M = BB.getParent()->getParent();
       auto [GV, DidCreate] =
@@ -356,6 +361,7 @@ Instruction *RandomIRBuilder::connectToSink(BasicBlock &BB,
         break;
       return new StoreInst(V, GV, Insts.back());
     }
+    */
     case EndOfValueSink:
     default:
       llvm_unreachable("EndOfValueSink executed");
@@ -369,7 +375,7 @@ Instruction *RandomIRBuilder::newSink(BasicBlock &BB,
   Value *Ptr = findPointer(BB, Insts, {V}, matchFirstType());
   if (!Ptr) {
     Type *Ty = V->getType();
-    Ptr = createStackMemory(BB.getParent(), Ty, UndefValue::get(Ty));
+    Ptr = createStackMemory(BB.getParent(), Ty, makeConstantsWithType(Ty)[0]);
   }
 
   return new StoreInst(V, Ptr, Insts.back());
@@ -378,27 +384,14 @@ Instruction *RandomIRBuilder::newSink(BasicBlock &BB,
 Value *RandomIRBuilder::findPointer(BasicBlock &BB,
                                     ArrayRef<Instruction *> Insts,
                                     ArrayRef<Value *> Srcs, SourcePred Pred) {
-  auto IsMatchingPtr = [&Srcs, &Pred](Instruction *Inst) {
-    // Invoke instructions sometimes produce valid pointers but currently
-    // we can't insert loads or stores from them
-    if (Inst->isTerminator())
-      return false;
-
-    if (auto *PtrTy = dyn_cast<PointerType>(Inst->getType())) {
-      if (PtrTy->isOpaque())
-        return true;
-
-      // We can never generate loads from non first class or non sized types
-      Type *ElemTy = PtrTy->getNonOpaquePointerElementType();
-      if (!ElemTy->isSized() || !ElemTy->isFirstClassType())
-        return false;
-
-      // TODO: Check if this is horribly expensive.
-      return Pred.matches(Srcs, UndefValue::get(ElemTy));
-    }
-    return false;
-  };
+  auto IsMatchingPtr = [](Value *V) { return V->getType()->isPointerTy(); };
   if (auto RS = makeSampler(Rand, make_filter_range(Insts, IsMatchingPtr)))
+    return RS.getSelection();
+  Function *F = BB.getParent();
+  SmallVector<Argument *, 8> Args;
+  for (Argument &arg : F->args())
+    Args.push_back(&arg);
+  if (auto RS = makeSampler(Rand, make_filter_range(Args, IsMatchingPtr)))
     return RS.getSelection();
   return nullptr;
 }
