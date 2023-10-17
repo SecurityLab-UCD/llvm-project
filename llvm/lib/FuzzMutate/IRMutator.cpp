@@ -173,7 +173,8 @@ void InjectorIRStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 
   // Choose a source, which will be used to constrain the operation selection.
   SmallVector<Value *, 2> Srcs;
-  Srcs.push_back(IB.findOrCreateSource(BB, InstsBefore));
+  Value *Src = IB.findOrCreateSource(BB, InstsBefore);
+  Srcs.push_back(Src);
 
   // Choose an operation that's constrained to be valid for the type of the
   // source, collect any other sources it needs, and then build it.
