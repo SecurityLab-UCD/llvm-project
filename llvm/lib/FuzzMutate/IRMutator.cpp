@@ -46,10 +46,15 @@ void IRMutationStrategy::mutate(Module &M, RandomIRBuilder &IB) {
 }
 
 void IRMutationStrategy::mutate(Function &F, RandomIRBuilder &IB) {
-  auto Range = make_filter_range(make_pointer_range(F),
-                                 [](BasicBlock *BB) { return !BB->isEHPad(); });
-
-  mutate(*makeSampler(IB.Rand, Range).getSelection(), IB);
+  auto Range = make_filter_range(make_pointer_range(F), [](BasicBlock *BB) {
+    // Regular mutation strategies can only mutate EMI-blocks that will have no
+    // effect on actual program execution.
+    return !BB->isEHPad() && BB->getName().starts_with("EMI");
+  });
+  auto Sampler = makeSampler(IB.Rand, Range);
+  if (Sampler.isEmpty())
+    return;
+  mutate(*Sampler.getSelection(), IB);
 }
 
 void IRMutationStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
@@ -70,8 +75,7 @@ std::vector<TypeGetter> llvm::IRMutator::getDefaultAllowedTypes() {
   std::vector<TypeGetter> Types(ScalarTypes);
 
   // Vector types
-  /*
-  int VectorLength[] = {1, 2, 4, 8, 16, 32};
+  int VectorLength[] = {/*1,*/ 2, 4, 8, 16, 32};
   std::vector<TypeGetter> BasicTypeGetters(Types);
   for (auto typeGetter : BasicTypeGetters) {
     for (int length : VectorLength) {
@@ -80,16 +84,12 @@ std::vector<TypeGetter> llvm::IRMutator::getDefaultAllowedTypes() {
       });
     }
   }
-  */
 
   // Pointers
-  // FIXME: maybe enable?
-  /*
   TypeGetter OpaquePtrGetter = [](LLVMContext &C) {
     return PointerType::get(Type::getInt32Ty(C), 0);
   };
   Types.push_back(OpaquePtrGetter);
-  */
   return Types;
 }
 
@@ -489,8 +489,8 @@ void InsertCFGStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   // A coin decides if it is branch or switch
   if (uniform<uint64_t>(IB.Rand, 0, 1)) {
     // Branch
-    BasicBlock *IfTrue = BasicBlock::Create(C, "T", F);
-    BasicBlock *IfFalse = BasicBlock::Create(C, "F", F);
+    BasicBlock *IfTrue = BasicBlock::Create(C, "EMI_T", F);
+    BasicBlock *IfFalse = BasicBlock::Create(C, "EMI_F", F);
     Value *Cond =
         IB.findOrCreateSource(*Source, InstsBeforeSplit, {},
                               fuzzerop::onlyType(Type::getInt1Ty(C)), false);
@@ -517,7 +517,7 @@ void InsertCFGStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     // Create Switch inst in Block
     Value *Cond = IB.findOrCreateSource(*Source, InstsBeforeSplit, {},
                                         fuzzerop::onlyType(IntTy), false);
-    BasicBlock *DefaultBlock = BasicBlock::Create(C, "SW_D", F);
+    BasicBlock *DefaultBlock = BasicBlock::Create(C, "EMI_SW_D", F);
     uint64_t NumCases = uniform<uint64_t>(IB.Rand, 1, MaxNumCases);
     NumCases = (NumCases > MaxCaseVal) ? MaxCaseVal + 1 : NumCases;
     SwitchInst *Switch = SwitchInst::Create(Cond, DefaultBlock, NumCases);
@@ -529,7 +529,7 @@ void InsertCFGStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     SmallSet<uint64_t, 4> CasesTaken;
     for (uint64_t i = 0; i < NumCases; i++) {
       uint64_t CaseVal = getUniqueCaseValue(CasesTaken, MaxCaseVal, IB);
-      BasicBlock *CaseBlock = BasicBlock::Create(C, "SW_C", F);
+      BasicBlock *CaseBlock = BasicBlock::Create(C, "EMI_SW_C", F);
       ConstantInt *OnValue = ConstantInt::get(IntTy, CaseVal);
       Switch->addCase(OnValue, CaseBlock);
       Blocks.push_back(CaseBlock);
@@ -538,6 +538,65 @@ void InsertCFGStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
     // Connect these blocks to `Sink`
     connectBlocksToSink(Blocks, Sink, IB);
   }
+}
+
+void InsertEMIBlockStrategy::mutate(Function &F, RandomIRBuilder &IB) {
+  auto Range = make_filter_range(make_pointer_range(F),
+                                 [](BasicBlock *BB) { return !BB->isEHPad(); });
+
+  auto Sampler = makeSampler(IB.Rand, Range);
+  if (Sampler.isEmpty())
+    return;
+  mutate(*Sampler.getSelection(), IB);
+}
+
+// Essentially a replica of InsertCFG with some differences
+// - Creates a branch with the emi_false global variable
+// - Removed switch for but, but will be added in later.
+// - Not restricted to EMI-marked BBs. BB mutation can occur anywhere.
+void InsertEMIBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
+  Module *M = BB.getParent()->getParent();
+  LLVMContext &C = M->getContext();
+
+  // Global value false flag for EMI initialized elsewhere so opt doesn't touch
+  // EMI-related branches.
+  const StringRef EmiFalseName = StringRef("emi_false");
+  GlobalVariable *EmiFalse = M->getGlobalVariable(EmiFalseName);
+  if (!EmiFalse)
+    EmiFalse = new GlobalVariable(
+        *M, Type::getInt1Ty(C), false, GlobalValue::ExternalLinkage, nullptr,
+        EmiFalseName, nullptr, GlobalVariable::NotThreadLocal, 0U, true);
+
+  SmallVector<Instruction *, 32> Insts;
+  for (Instruction &I : getInsertionRange(BB))
+    Insts.push_back(&I);
+
+  if (Insts.size() < 1)
+    return;
+
+  // Choose a point where we split the block.
+  uint64_t IP = uniform<uint64_t>(IB.Rand, 0, Insts.size() - 1);
+
+  // `Sink` inherits Blocks' terminator, `Source` will have a BranchInst
+  // directly jumps to `Sink`. Here, we have to create a new terminator for
+  // `Source`.
+  BasicBlock *Block = Insts[IP]->getParent();
+  BasicBlock *Source = Block;
+  BasicBlock *Sink = Block->splitBasicBlock(Insts[IP], "BB");
+
+  Function *F = BB.getParent();
+
+  BasicBlock *EmiBB = BasicBlock::Create(C, "EMI_BB", F);
+  LoadInst *EmiFalseValue =
+      new LoadInst(Type::getInt1Ty(C), EmiFalse, "EmiFalseValue", true,
+                   Source->getTerminator());
+  BranchInst *Branch = BranchInst::Create(EmiBB, Sink, EmiFalseValue);
+  // Remove the old terminator.
+  ReplaceInstWithInst(Source->getTerminator(), Branch);
+  // Connect these blocks to `Sink`
+  connectBlocksToSink({EmiBB}, Sink, IB);
+
+  // TODO: add switch support for EMI blocks
 }
 
 /// The caller has to guarantee that these blocks are "empty", i.e. it doesn't

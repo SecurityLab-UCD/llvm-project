@@ -163,14 +163,25 @@ public:
   InsertCFGStrategy(uint64_t MNC = 8) : MaxNumCases(MNC){};
   uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
                      uint64_t CurrentWeight) override {
-    return 27;//5;
+    return 15;
   }
 
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 
-private:
+protected:
   void connectBlocksToSink(ArrayRef<BasicBlock *> Blocks, BasicBlock *Sink,
                            RandomIRBuilder &IB);
+};
+
+class InsertEMIBlockStrategy : public InsertCFGStrategy {
+public:
+  uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
+                     uint64_t CurrentWeight) override {
+    return 15;
+  }
+
+  void mutate(Function &F, RandomIRBuilder &IB) override;
+  void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 };
 
 /// Strategy to insert PHI Nodes at the head of each basic block.

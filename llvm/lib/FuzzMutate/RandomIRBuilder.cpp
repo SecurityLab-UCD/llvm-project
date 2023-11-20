@@ -219,7 +219,12 @@ Value *RandomIRBuilder::newSource(BasicBlock &BB, ArrayRef<Instruction *> Insts,
     Type *AccessTy = Ptr->getType()->isOpaquePointerTy()
                          ? RS.getSelection()->getType()
                          : Ptr->getType()->getNonOpaquePointerElementType();
-    auto *NewLoad = new LoadInst(AccessTy, Ptr, "L", &*IP);
+    LoadInst *NewLoad = nullptr;
+    if (IP != BB.end()) {
+      NewLoad = new LoadInst(AccessTy, Ptr, "L", &*IP);
+    } else {
+      NewLoad = new LoadInst(AccessTy, Ptr, "L", &BB);
+    }
 
     // Only sample this load if it really matches the descriptor
     if (Pred.matches(Srcs, NewLoad))
