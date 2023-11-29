@@ -86,6 +86,8 @@ RandomIRBuilder::findOrCreateGlobalVariable(Module *M, ArrayRef<Value *> Srcs,
   bool DidCreate = false;
   SmallVector<GlobalVariable *, 4> GlobalVars;
   for (GlobalVariable &GV : M->globals()) {
+    if (GV.getName() == "emi_false")
+      continue;
     GlobalVars.push_back(&GV);
   }
   auto RS = makeSampler(Rand, make_filter_range(GlobalVars, MatchesPred));

@@ -400,6 +400,8 @@ Function *InsertFunctionStrategy::chooseFunction(Module *M,
   // If nullptr is selected, we will create a new function definition.
   SmallVector<Function *, 32> Functions({nullptr});
   for (Function &F : M->functions()) {
+    if (F.getName().contains("mem"))
+      continue;
     Functions.push_back(&F);
   }
   auto RS = makeSampler(IB.Rand, Functions);
