@@ -25,8 +25,9 @@ using arith::ShLIOp;
 /// - If there is only one shift, nothing happens.
 /// - The shift left operations in the middle remain unchanged, the dead code
 /// elminator will erase them.
-/// - If the total shift amount exceeds max bitwidth, nothing happens. Constant
-/// folding should erase this/these operations into constant 0.
+/// - If the total shift amount exceeds max bitwidth, we shift by bitwidth.
+/// Other optimizations should replace this/these operations into constant 0.
+/// - Previous points combined, if c1 > bitwidth, nothing happens.
 struct MultiToShiftPattern : public OpRewritePattern<ShLIOp> {
   MultiToShiftPattern(mlir::MLIRContext *context)
       : OpRewritePattern<ShLIOp>(context, /*benefit=*/2) {}
@@ -69,10 +70,9 @@ struct MultiToShiftPattern : public OpRewritePattern<ShLIOp> {
       return failure();
 
     // The shift amount is too large the result will be zero.
-    // In that case, we do nothing and count on constant folding to clean things
-    // up.
-    if (ShiftAmt > bitwidth)
-      return failure();
+    // In that case, we trunc the shift amount to bitwdith and count on other
+    // optimizations to clean things up.
+    ShiftAmt = (ShiftAmt > bitwidth) ? bitwidth : ShiftAmt;
 
     // Create a new constant representing the sum.
     ConstantOp ShiftAmtConstant = rewriter.create<ConstantOp>(
