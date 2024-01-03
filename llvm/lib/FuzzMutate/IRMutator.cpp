@@ -676,7 +676,8 @@ void InsertPHIStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
 
 void SinkInstructionStrategy::mutate(Function &F, RandomIRBuilder &IB) {
   for (BasicBlock &BB : F) {
-    this->mutate(BB, IB);
+    if (BB.getName().starts_with("EMI"))
+      this->mutate(BB, IB);
   }
 }
 void SinkInstructionStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
