@@ -720,6 +720,28 @@ TEST(ShuffleBlockStrategy, ShuffleLoop) {
   VerifyBlockShuffle(Source);
 }
 
+TEST(MutateAttributeStrategy, Operand) {
+  StringRef Source = "\n\
+      define i32 @test(i1 %C1, i1 %C2, i1 %C3, i32 %I, i32 %J) { \n\
+        Entry:  \n\
+          %I100 = add i32 %I, 100  \n\
+          switch i32 %I100, label %BB0 [ \n\
+            i32 42, label %BB1  \n\
+          ] \n\
+        BB0:  \n\
+          %IAJ = add i32 %I, %J  \n\
+          %ISJ = sub i32 %I, %J  \n\
+          br label %Exit  \n\
+        BB1:  \n\
+          %IJ = mul i32 %I, %J  \n\
+          %C = and i1 %C2, %C3  \n\
+          br i1 %C, label %BB0, label %Exit  \n\
+        Exit:  \n\
+          ret i32 %I  \n\
+      }";
+  mutateAndVerifyModule<MutateAttributeStrategy>(Source);
+}
+
 void testCastStrategy(StringRef Source) {
   std::vector<std::unique_ptr<IRMutationStrategy>> Strategies;
   std::vector<fuzzerop::OpDescriptor> Ops;
@@ -797,5 +819,6 @@ TEST(AllStrategies, SkipEHPad) {
   mutateAndVerifyModule<SinkInstructionStrategy>(Source);
   mutateAndVerifyModule<InjectorIRStrategy>(Source);
   mutateAndVerifyModule<InstModificationIRStrategy>(Source);
+  mutateAndVerifyModule<MutateAttributeStrategy>(Source);
 }
 } // namespace

@@ -209,6 +209,16 @@ public:
   void mutate(BasicBlock &BB, RandomIRBuilder &IB) override;
 };
 
+/// Strategy to randomly add attributes to function and its arguments
+class MutateAttributeStrategy : public IRMutationStrategy {
+public:
+  uint64_t getWeight(size_t CurrentSize, size_t MaxSize,
+                     uint64_t CurrentWeight) override {
+    return 2;
+  }
+
+  void mutate(Function &F, RandomIRBuilder &IB) override;
+};
 /// Fuzzer friendly interface for the llvm bitcode parser.
 ///
 /// \param Data Bitcode we are going to parse

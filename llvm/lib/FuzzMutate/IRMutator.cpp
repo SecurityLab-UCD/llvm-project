@@ -701,6 +701,57 @@ void ShuffleBlockStrategy::mutate(BasicBlock &BB, RandomIRBuilder &IB) {
   }
 }
 
+void MutateAttributeStrategy::mutate(Function &F, RandomIRBuilder &IB) {
+  using AttrKind = Attribute::AttrKind;
+  auto DX = [&](unsigned x) { return uniform<uint64_t>(IB.Rand, 0, x); };
+
+  auto RandomlyAddFnAttribute = [DX, &F](std::vector<AttrKind> Attrs) {
+    if (DX(2))
+      return;
+    for (auto A : Attrs) {
+      // if (F.hasFnAttribute(A))
+      //   Attrs.erase(A);
+      F.removeFnAttr(A);
+    }
+    unsigned DSize = DX(Attrs.size());
+    if (DSize != Attrs.size())
+      F.addFnAttr(Attrs[DSize]);
+  };
+
+  RandomlyAddFnAttribute({AttrKind::Cold, AttrKind::Hot});
+
+  RandomlyAddFnAttribute(
+      {AttrKind::AlwaysInline, AttrKind::InlineHint, AttrKind::NoInline});
+
+  RandomlyAddFnAttribute({AttrKind::OptForFuzzing, AttrKind::OptimizeForSize});
+  AttrKind FnAttrs[] = {AttrKind::MinSize, AttrKind::NoUnwind,
+                        AttrKind::NoUnwind, AttrKind::NoRedZone,
+                        AttrKind::SpeculativeLoadHardening};
+  for (auto A : FnAttrs) {
+    RandomlyAddFnAttribute({A});
+  }
+
+  auto RandomlyAddArgAttribute = [&](unsigned Idx,
+                                     std::vector<AttrKind> Attrs) {
+    if (DX(2))
+      return;
+    for (auto A : Attrs) {
+      F.removeParamAttr(Idx, A);
+    }
+    unsigned DSize = DX(Attrs.size());
+    if (DSize != Attrs.size()) {
+      F.addParamAttr(Idx, Attrs[DSize]);
+    }
+  };
+  unsigned Idx = DX(F.arg_size());
+  if (Idx == F.arg_size())
+    return;
+  AttrKind ParamAttrs[] = {AttrKind::InReg, AttrKind::NoUndef};
+  for (auto A : ParamAttrs) {
+    RandomlyAddArgAttribute(Idx, {A});
+  }
+}
+
 std::unique_ptr<Module> llvm::parseModule(const uint8_t *Data, size_t Size,
                                           LLVMContext &Context) {
 
