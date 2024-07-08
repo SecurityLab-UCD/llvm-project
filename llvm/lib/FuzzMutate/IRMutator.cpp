@@ -706,8 +706,6 @@ void MutateAttributeStrategy::mutate(Function &F, RandomIRBuilder &IB) {
   auto DX = [&](unsigned x) { return uniform<uint64_t>(IB.Rand, 0, x); };
 
   auto RandomlyAddFnAttribute = [DX, &F](std::vector<AttrKind> Attrs) {
-    if (DX(2))
-      return;
     for (auto A : Attrs) {
       // if (F.hasFnAttribute(A))
       //   Attrs.erase(A);
@@ -724,17 +722,16 @@ void MutateAttributeStrategy::mutate(Function &F, RandomIRBuilder &IB) {
       {AttrKind::AlwaysInline, AttrKind::InlineHint, AttrKind::NoInline});
 
   RandomlyAddFnAttribute({AttrKind::OptForFuzzing, AttrKind::OptimizeForSize});
-  AttrKind FnAttrs[] = {AttrKind::MinSize, AttrKind::NoUnwind,
-                        AttrKind::NoUnwind, AttrKind::NoRedZone,
-                        AttrKind::SpeculativeLoadHardening};
+  AttrKind FnAttrs[] = {
+      AttrKind::MinSize,    AttrKind::NoUnwind,
+      AttrKind::WillReturn, AttrKind::NoUnwind,
+      AttrKind::NoRedZone,  AttrKind::SpeculativeLoadHardening};
   for (auto A : FnAttrs) {
     RandomlyAddFnAttribute({A});
   }
 
   auto RandomlyAddArgAttribute = [&](unsigned Idx,
                                      std::vector<AttrKind> Attrs) {
-    if (DX(2))
-      return;
     for (auto A : Attrs) {
       F.removeParamAttr(Idx, A);
     }
